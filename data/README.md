@@ -13,4 +13,5 @@ data/
   image/
 ```
 
-Record each dataset's source, license and download date in the team's shared notes.
+Tabular data (UCI Bank Marketing): run `python backend/scripts/download_bank_marketing.py`
+from the repository root. Source, license, checksum and EDA: [planning/data.md](../planning/data.md).
