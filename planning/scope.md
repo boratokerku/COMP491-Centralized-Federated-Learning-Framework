@@ -1,9 +1,9 @@
 # T1.1: Requirements and Scope Decision Document
 
 **Project:** COMP 491 Capstone – Centralized Federated Learning Framework  
-**Document Version:** 1.0  
-**Date:** Fall 2026  
-**Status:** Approved  
+**Document Version:** 0.2 (draft)  
+**Date:** 26 October 2026  
+**Status:** Draft – pending advisor review  
 **Related Work Packages:** WP1 (Design, Plan, and Data Preparation)  
 **Deliverable Association:** D1.4 (Scope Decision and Work Plan)
 
@@ -11,25 +11,25 @@
 
 ## 1. Executive Summary & Context
 
-Cross-silo Federated Learning (FL) enables distributed organizations (such as banks, medical institutions, or telecom providers) to collaboratively train machine learning models without transferring their private raw data to a central location. 
+Cross-silo Federated Learning (FL) enables distributed organizations (such as banks, medical institutions, or telecom providers) to collaboratively train machine learning models without transferring their private raw data to a central location.
 
-While academic research often abstracts away real-world system complexities through synchronous single-machine simulations, real-world cross-silo FL deployments face major distributed systems challenges:
+While academic research often abstracts away real-world system complexities through single-machine simulations, real-world cross-silo FL deployments face major distributed systems challenges:
 1. **Client Incompatibility:** Independently operated clients may have differing feature ordering, measurement units, categorical encodings, or label semantics.
-2. **Network & Client Instability:** Heterogeneous network speeds, slow clients (stragglers), temporary dropouts, duplicate update submissions, and unannounced disconnections.
+2. **Network & Client Instability:** Heterogeneous network speeds, slow clients (stragglers), temporary dropouts, duplicate or stale update submissions, and unannounced disconnections.
 3. **Coordinator Failures:** Server-side crashes requiring reliable resumption from persisted state rather than restarting from round zero.
-4. **Observability & Traceability:** Requirements for comprehensive, audit-ready operational logging, latency tracking, and reproducible end-of-run reporting.
+4. **Observability & Traceability:** Requirements for comprehensive operational logging, latency tracking, and reproducible end-of-run reporting.
 
-This document formally establishes the **requirements, feature boundaries (mandatory vs. optional), web application structure, and incremental build order** for the Centralized Federated Learning Framework.
+This document establishes the **requirements, feature boundaries (mandatory vs. optional), web application structure, and incremental build order** for the framework. Work package (WP), deliverable (D) and milestone (M) numbers refer to the project proposal.
 
 ---
 
-## 2. Review of Capstone Objectives & Advisor Directives
+## 2. Review of Capstone Objectives
 
-Based on the official Capstone Project Description and advisory input from Prof. Mehmet Emre Gürsoy and Prof. Barış Akgün:
-- **Core Focus:** The project is explicitly prioritized as a **distributed systems, robustness, compatibility, and observability project**, rather than a novel machine learning algorithm design study.
-- **Cross-Silo Setting:** A small number (e.g., 3–10) of independently operated client organizations participating in centrally coordinated training across real networks (Internet/WAN).
-- **Multi-Modal Verification:** While banking tabular data is the primary operational benchmark, the framework architecture must demonstrate multi-modality by supporting image and text data.
-- **Fail-Safe Client Onboarding:** Incompatible clients must be intercepted and rejected before they can corrupt the global model.
+Based on the official Capstone Project Description and the project proposal (advisors: Prof. Mehmet Emre Gürsoy, Prof. Barış Akgün; this document has not yet been reviewed by them):
+- **Core Focus:** A **distributed systems, robustness, compatibility, and observability project**, not a study of new federated learning algorithms.
+- **Cross-Silo Setting:** A small number (e.g., 3–10) of independently operated client organizations participating in centrally coordinated training over real networks (Internet).
+- **Data Modalities:** The advisors confirmed this point only (the rest of this document is still pending their review): tabular banking data is mandatory. Exactly one additional modality is demonstrated in the same framework: **image (MedMNIST, primary candidate) or text (UCI SMS Spam Collection)**; the choice is finalized in WP7 (T7.1). This narrows the Capstone Project Description, which lists tabular, image and text.
+- **Fail-Safe Client Onboarding:** Incompatible clients must be detected and rejected before they can corrupt the global model.
 
 ---
 
@@ -39,83 +39,111 @@ Based on the official Capstone Project Description and advisory input from Prof.
 +-----------------------------------------------------------------------------------+
 |                           CFL FRAMEWORK FEATURE SCOPE                             |
 +-----------------------------------------------------------------------------------+
-|  MANDATORY CORE (Baseline)                       OPTIONAL EXTENSIONS (If Time)    |
-|  * PyTorch Neural Network Pipeline               * Non-IID Dirichlet Partitioning |
-|  * FedAvg & FedProx (Proximal mu Loss)           * Client-Side DP-SGD / Noise     |
-|  * 5-Phase Round Lifecycle Engine                * Byzantine-Robust Aggregation   |
-|  * PostgreSQL 16 State Persistence               * Dynamic Client Clustering      |
-|  * Pre-Round Conformance Manifest Check          * Secure Aggregation (SecAgg)    |
-|  * Managed-Code (Docker) & Independent Clients   * Homomorphic Encryption         |
-|  * Real Internet WAN Multi-Machine Deployment    * Web Push Notification Alerts   |
-|  * Automated Markdown/CSV/Plot Reports           * Split Learning                 |
-|  * In-Memory Simulation & WAN Mode Parity        * Model Quantization (INT8)      |
+|  MANDATORY CORE                                  OPTIONAL EXTENSIONS (If Time)    |
+|  * PyTorch Neural Network Pipeline               * Non-IID Partitioning           |
+|  * FedAvg & FedProx (Proximal mu Loss)             (label / feature skew)         |
+|  * Round State Machine (5 states)                * Update Clipping + Gaussian     |
+|  * PostgreSQL 16 State Persistence & Resume        Noise (no formal DP guarantee) |
+|  * Client Registration & Authentication          * Interactive web extras         |
+|  * Pre-Round Conformance Manifest Check            (see Section 4.3)              |
+|  * Managed-Code (Docker) & Independent Clients                                    |
+|  * Real Internet Multi-Machine Deployment                                         |
+|  * Automated JSON/CSV/Markdown Reports & Plots                                     |
+|  * Final Model Delivery (versioned, checksummed)                                  |
+|  * Simulation & Distributed Mode Parity                                           |
 +-----------------------------------------------------------------------------------+
 ```
 
 ### 3.1. Mandatory Features (Core Deliverables)
 
 #### A. Core Machine Learning & Aggregation
-1. **Neural Network Framework:** Built on PyTorch, supporting feedforward neural networks (MLPs) for tabular data, CNNs for medical images, and RNN/Transformer or Linear Embeddings for text classification.
+1. **Neural Network Framework:** Built on PyTorch: an MLP for tabular data and a small CNN for images (or an embedding-based model for text, if text is chosen as the second modality).
 2. **Federated Optimization Algorithms:**
-   - **FedAvg (Federated Averaging):** Sample-weighted coordinate averaging of local model weights.
+   - **FedAvg (Federated Averaging):** Sample-weighted averaging of local model weights.
    - **FedProx:** Addition of a proximal regularization term $\frac{\mu}{2} \|w - w^t\|^2$ to the client local objective to address system and data heterogeneity.
 3. **Dual Execution Modes:**
-   - **Simulation Mode:** Fast in-memory transport engine executing multiple virtual clients on a single machine for rapid testing and continuous integration.
-   - **Real Distributed Mode:** Real-world execution across separate physical machines, cloud VMs, and student laptops over the Internet with strict architectural parity.
+   - **Simulation Mode:** In-memory transport executing multiple virtual clients on a single machine for debugging, benchmarking and continuous integration.
+   - **Real Distributed Mode:** Execution across separate machines (university servers, cloud VMs, team members' machines) over the Internet, using the same training and orchestration abstractions as simulation mode.
+4. **Data Distribution:** A fully randomized (IID) partition of each dataset across clients, generated with a fixed seed.
 
 #### B. Coordination & Orchestration Layer
-1. **5-State Round State Machine:** Explicit transitions through `OPEN` $\to$ `COLLECTING` $\to$ `AGGREGATING` $\to$ `DONE` (or `FAILED`) with deterministic transition guards.
-2. **Participation Quorum & Timeouts:** Configurable minimum client threshold ($K_{\min}$) and per-round deadlines ($T_{\text{round}}$).
-3. **Straggler & Dropout Handling:** Graceful handling of slow clients (discarding late updates after timeout) and client disconnections without stalling the global run.
-4. **Idempotency & Deduplication:** Prevention of duplicate or stale update processing using unique client run tokens and UUIDv4 `update_id` keys.
-5. **Coordinator Crash Recovery:** Continuous state synchronization to PostgreSQL 16, allowing a crashed coordinator to recover the last completed round and model state upon restart.
+1. **Round State Machine:** Explicit transitions through `OPEN` $\to$ `COLLECTING` $\to$ `AGGREGATING` $\to$ `DONE` (or `FAILED` from any non-terminal state) with deterministic transition guards.
+2. **Round Lifecycle:** Client registration, round initiation, model/configuration distribution, local training, update collection, aggregation and evaluation, with no manual step between rounds.
+3. **Partial Participation:** A configurable subset of registered clients is selected for each round.
+4. **Participation Quorum & Timeouts:** Configurable minimum client threshold ($K_{\min}$) and per-round deadline ($T_{\text{round}}$); at the deadline the round is aggregated with the clients that arrived or marked `FAILED` with a recorded reason.
+5. **Straggler & Dropout Handling:** Late updates are discarded after the deadline; clients that drop out before or during a round do not stall the run.
+6. **Retries & Reconnection:** Clients retry temporary connection failures with exponential backoff; a dropped client can rejoin in a later round.
+7. **Idempotency & Deduplication:** Duplicate and stale updates are rejected using a client-generated UUIDv4 `update_id` and a `UNIQUE(run_id, round_id, client_id)` constraint, plus round and model-version checks.
+8. **Coordinator Crash Recovery:** Run, round and model state are persisted to PostgreSQL after every transition, so a restarted coordinator resumes from the last completed round instead of round zero.
 
 #### C. Client Onboarding & Conformance Contract
-1. **Managed-Code Mode:** Pre-packaged Docker images (`cfl-client`) and release bundles with cryptographic version validation.
-2. **Independent-Implementation Mode:** A public, language-agnostic REST interface requiring clients to submit a **Manifest of Conformance** prior to joining.
+1. **Managed-Code Mode:** Versioned Docker images (`cfl-client`) or release bundles that do not require access to a public Git repository; the client's version (image tag/digest) is verified at registration.
+2. **Independent-Implementation Mode:** A documented, language-agnostic REST interface; such clients must submit a **Conformance Manifest** and pass its checks before joining a run.
 3. **Pre-Training Conformance Validation:**
-   - Model architecture and parameter tensor compatibility.
-   - Input/output shape matching, feature naming, and exact column ordering.
-   - Data types (`dtypes`) and categorical encoding schema versions.
-   - Unit verification (e.g., duration in seconds vs. months).
-   - Deterministic synthetic test inference verification (comparing client preprocessed outputs against expected reference vectors).
-4. **Deterministic Disqualification:** Immediate rejection and structured audit logging of any client failing conformance checks.
+   - Model architecture/version and parameter tensor shapes.
+   - Input/output shapes, feature names, exact column ordering and data types.
+   - Pre-processing and categorical encoding versions.
+   - Feature semantics and units (e.g., days vs. months).
+   - Label semantics and expected value ranges.
+   - Reference test cases: the client's pre-processing output on synthetic inputs must match the expected reference outputs. No raw client data is shared.
+4. **Deterministic Disqualification:** A client failing any check is rejected with a clear reason, and the result is recorded in PostgreSQL.
 
 #### D. Communication & Security
-1. **Transport Layer:** HTTPS over TLS 1.3 terminated at a central Caddy reverse proxy.
-2. **Client-Initiated Architecture:** Clients always initiate outbound HTTP requests (`POST /register`, `GET /task`, `GET /model`, `POST /update`), avoiding firewall/NAT traversal issues.
-3. **Integrity Verification:** End-to-end SHA-256 checksums on all distributed and uploaded model weight artifacts (`.safetensors`).
+1. **Transport Layer:** HTTPS over TLS, terminated at a Caddy reverse proxy; plain HTTP is refused.
+2. **Client-Initiated Architecture:** Clients always initiate requests (`POST /register`, `GET /task`, `GET /model`, `POST /update`), avoiding firewall/NAT traversal issues.
+3. **Client Registration & Authentication:** Only clients on an administrator-approved list can register; each client receives a per-client token (stored hashed) that is required on every request. Unregistered clients are rejected.
+4. **Integrity Verification:** SHA-256 checksums on all distributed and uploaded model weight artifacts (`.safetensors`). Weights are never exchanged with pickle.
 
-#### E. Observability & Reporting
-1. **Telemetry & Metric Collection:** Detailed logging of Round-Trip Time (RTT), upload/download latency, payload sizes (bytes), client training duration, and server aggregation duration.
-2. **Automated End-of-Run Report:**
-   - Machine-readable artifact (`run_{id}_summary.json`).
-   - Human-readable Markdown summary report (`run_{id}_report.md`).
-   - Automated generation of evaluation plots: Global Loss/Accuracy vs. Round, Client Performance Variance, Communication Overhead, and Round Duration Breakdown.
+#### E. Evaluation & Metrics
+1. **Machine-Learning Metrics:** Accuracy, F1 and AUC of the global model across rounds; per-client performance across rounds; each client's local performance before and after local training.
+2. **Comparisons:** FedAvg vs. FedProx; federated vs. centralized and local-only baselines.
+3. **Communication Metrics:** Round-trip time between coordinator and clients; transfer time and size per message type (register, model download, update upload); total bytes transmitted; retry, dropout and failed-round counts.
+4. **Computation & Timing Metrics:** Per-round client training duration, server aggregation/evaluation duration, end-to-end round duration, and waiting vs. computing time.
+5. All metrics are reported with minimum, maximum and mean summaries.
+
+#### F. End-of-Training Report & Experiment Log
+Every completed run automatically produces:
+1. A machine-readable log (`run_{id}_summary.json` and CSV exports).
+2. A human-readable Markdown report (`run_{id}_report.md`) containing:
+   - Run ID, timestamps, configuration, and software/protocol/model/pre-processing/manifest versions.
+   - Dataset allocation summary and sample counts per client.
+   - Participating clients per round, dropout and failure events.
+   - Global and per-client ML metrics over time.
+   - Communication and timing metrics with min/max/mean summaries.
+   - Number of rounds attempted and completed, with the reason for every failed or skipped round.
+   - Final global model location and checksum.
+3. Plots of the principal ML and system metrics (global metrics vs. round, per-client performance, communication overhead, round duration breakdown).
+
+The report alone must be sufficient to reconstruct what happened in a run without inspecting console output.
+
+#### G. Final Model Delivery
+1. The final global model is packaged as a versioned artifact with checksum, manifest version and run ID.
+2. ONNX export, verified against the PyTorch model on the reference test cases.
+3. A gateway endpoint lets registered clients download the model and verify its checksum; unregistered clients are refused.
+
+#### H. Testing
+Automated tests for aggregation, FedProx, partial participation and reproducibility, plus a failure-case suite: slow client, dropout before and during a round, temporary connection failure with successful retry, duplicate update, stale update, reconnection in a later round, coordinator restart, and conformance mismatches.
 
 ---
 
-### 3.2. Optional Features (Extensions & Research Enhancements)
-
-The following features are designated as optional extensions and will be implemented only if core milestones are completed ahead of schedule:
+### 3.2. Optional Features (If Time Permits)
 
 1. **Non-IID Partitioning Experiments:**
-   - Label skew using Dirichlet distribution ($\text{Dir}(\alpha)$ with varying degrees of concentration $\alpha \in [0.1, 1.0]$).
-   - Feature distribution skew (e.g., regional or demographic variances between client splits).
-2. **Differential Privacy (DP) Extension:**
-   - Client-side gradient clipping ($\ell_2$-norm bound $C$) and Gaussian noise addition ($w \leftarrow w + \mathcal{N}(0, \sigma^2 C^2)$) to empirically quantify the privacy-utility tradeoff.
-3. **Byzantine-Robust Aggregation Rules:**
-   - Multi-Krum, Coordinate-wise Median, or Trimmed Mean to filter out adversarial poisoned updates.
-4. **Advanced Cryptographic Protocols:**
-   - Secure Multi-Party Aggregation (SecAgg) or Homomorphic Encryption (HE) (excluded from core scope as the project focuses on systems engineering rather than cryptography).
-5. **Dynamic Client Tiering:**
-   - Automated clustering of clients into fast and slow tiers based on historical training duration.
+   - Label skew (e.g., Dirichlet $\text{Dir}(\alpha)$ with varying $\alpha$, or clients missing classes).
+   - Feature-distribution skew between client splits.
+   - Exact construction to be decided with advisor input.
+2. **Privacy Extension:** Client-side clipping of the model update ($\Delta = w_{\text{local}} - w^t$) to an $\ell_2$-norm bound $C$ and Gaussian noise addition ($\Delta \leftarrow \Delta + \mathcal{N}(0, \sigma^2 C^2 I)$), measuring the effect on model quality. No formal differential-privacy guarantee or privacy accounting is claimed.
+3. **Web Application Extras:** see Section 4.3.
+
+### 3.3. Out of Scope
+
+Byzantine-robust aggregation, secure aggregation, homomorphic encryption, split learning, model quantization and container resource monitoring are outside the scope of this project.
 
 ---
 
 ## 4. Web Application Specification & Page Architecture
 
-The web application is built using **Next.js (React)** with a polished, modern user interface, clear separation between public documentation and authenticated operational monitoring.
+The web application is built with **Next.js (React)**. It has a public project site and an authenticated internal area. The internal area reads data through read-only gateway API endpoints, not directly from PostgreSQL. Grafana reads round metrics directly from PostgreSQL.
 
 ```
                            +------------------------+
@@ -124,99 +152,67 @@ The web application is built using **Next.js (React)** with a polished, modern u
                                        |
                    +-------------------+-------------------+
                    |                                       |
-         [ Public Portal ]                       [ Authenticated Area ]
-         * / (Overview & Mission)                * /app/dashboard (Live Overview)
-         * /docs (API & Conformance)             * /app/rounds (Round Viewer)
-         * /benchmarks (Results)                 * /app/clients (Registry & Conformance)
-         * /team (About)                         * /app/updates (Update Inbox)
+         [ Public Site ]                         [ Authenticated Area ]
+         * / (Overview)                          * /app/rounds (Round Viewer)
+         * /docs (API & Conformance)             * /app/clients (Clients & Conformance)
+         * /results (Results)                    * /app/updates (Update Inbox)
+         * /team (About)                         * /app/logs (Event Log)
                                                  * /app/reports (Reports & Plots)
-                                                 * /app/logs (Audit Trail)
-                                                 * /app/telemetry (Grafana Embed)
 ```
 
-### 4.1. Public Area (Unauthenticated)
+### 4.1. Public Area (Unauthenticated) – Mandatory
 
-| Route | Page Name | Primary Objective & Content |
+Online from week 4 (M6.1) and updated weekly until the end of the semester.
+
+| Route | Page Name | Content |
 | :--- | :--- | :--- |
-| `/` | **Project Home** | High-level project summary, architectural value proposition, cross-silo FL explanation, dynamic system stats badge. |
-| `/docs` | **Documentation & API** | Interactive documentation of REST API endpoints, Conformance Manifest specification, Docker setup instructions, and custom client integration guide. |
-| `/benchmarks` | **Results & Benchmarks** | Public experiment showcase displaying comparison charts of FedAvg vs. FedProx, baseline centralized vs. federated accuracy, and multi-modal results. |
-| `/team` | **Team & About** | Project background, contributors, academic advisors, institution details (Koç University), and links to GitHub repository. |
+| `/` | **Project Home** | Project summary, cross-silo FL explanation, weekly progress updates. |
+| `/docs` | **Documentation** | Setup and run instructions, REST API reference, Conformance Manifest specification, client integration guide. |
+| `/results` | **Results** | FedAvg vs. FedProx and federated vs. centralized/local-only results for both modalities; poster and demo video when available. |
+| `/team` | **Team & About** | Team members, advisors, Koç University, link to the GitHub repository. |
 
-### 4.2. Authenticated Management Area (`/app`)
+### 4.2. Authenticated Area (`/app`) – Mandatory
 
-| Route | View Name | Key Components & Functionality |
+| Route | View Name | Content |
 | :--- | :--- | :--- |
-| `/app/dashboard` | **Control Center** | Active training run status badge, active round progress card, live quorum gauge ($K/K_{\min}$), quick actions (Start Run, Abort, Download Model). |
-| `/app/rounds` | **Round Viewer** | Visual interactive state machine (`OPEN` $\to$ `COLLECTING` $\to$ `AGGREGATING` $\to$ `DONE`), per-client progress checklist, round timer countdown, and straggler warning list. |
-| `/app/clients` | **Client Registry & Conformance Hub** | Table of all registered clients, connection status (Online/Offline/Straggler), IP/Device info, conformance validation badge, and inspectable JSON failure trace for rejected clients. |
-| `/app/updates` | **Update Inbox** | Detailed inspection table for received model weights in the active round: client ID, update timestamp, sample count weight ($n_k$), SHA-256 payload hash, and validation status. |
-| `/app/reports` | **Reports & Plot Gallery** | Historical run browser, interactive Chart.js/Recharts loss/accuracy curves, communication overhead histograms, and 1-click Markdown/CSV/JSON report downloads. |
-| `/app/logs` | **System Audit Trail** | Real-time searchable and filterable event stream from PostgreSQL (client registration, timeout fires, aggregation completions, crash recovery events). |
-| `/app/telemetry` | **Grafana Live Telemetry** | Embedded Grafana dashboard displaying container resource utilization, network I/O, latency distributions, and memory footprints. |
+| `/app/rounds` | **Round Viewer** | Current run and round state, participating clients, quorum ($K/K_{\min}$), deadline, stragglers. |
+| `/app/clients` | **Clients & Conformance** | Registered clients, last seen / online status, client version, conformance status (passed, or failed with reason and manifest version). |
+| `/app/updates` | **Update Inbox** | Updates in the current round: client ID, timestamp, sample count, SHA-256 checksum, accepted/rejected with reason. |
+| `/app/logs` | **Event Log** | Filterable event list from PostgreSQL (registrations, timeouts, rejections, aggregations, coordinator restarts). |
+| `/app/reports` | **Reports & Plots** | List of completed runs, generated plots, Markdown/CSV/JSON report downloads. |
+
+### 4.3. Optional Web Extras
+
+- Control actions (Start Run, Abort): require write endpoints with separate admin authorization.
+- Interactive charts (Recharts/Chart.js) in place of the generated static plots.
+- Embedded Grafana panels.
 
 ---
 
 ## 5. Build Order & Implementation Roadmap
 
-The implementation follows a **design-first, incremental layered methodology**, ensuring that each layer is tested and validated before building dependent components.
+Design-first, incremental layers, aligned with the proposal's work packages and Gantt chart (12 weeks, final deadline 15 January 2027). Each layer is tested before dependent layers build on it.
 
-```
-+-----------------------------------------------------------------------------------------+
-|                                    BUILD ORDER PHASES                                   |
-+-----------------------------------------------------------------------------------------+
-|  LAYER 1: Design, Specifications & Data Preparation (Weeks 1 - 2) [WP1]                 |
-|  * PlantUML Architecture, State Machine, Sequence, Deployment Diagrams                 |
-|  * Scope Decision & Web Site Architecture Specification                                |
-|  * REST API OpenAPI Contract, PostgreSQL DDL Schema, Conformance Manifest Specification |
-|  * UCI Bank Marketing Data Cleaning, Preprocessing & Randomized IID Partitioner         |
-+-----------------------------------------------------------------------------------------+
-                                           |
-                                           v
-+-----------------------------------------------------------------------------------------+
-|  LAYER 2: FL Core Engine & Local Simulation Mode (Weeks 3 - 5) [WP2]                   |
-|  * PyTorch Model Architecture (MLP for Tabular Banking)                                 |
-|  * FedAvg & FedProx Local Training Modules with Loss Regularization                     |
-|  * In-Memory Coordinator & Simulation Harness for Multi-Client Rounds                   |
-|  * Baseline Benchmarking: Centralized vs. Local-Only vs. Federated                      |
-+-----------------------------------------------------------------------------------------+
-                                           |
-                                           v
-+-----------------------------------------------------------------------------------------+
-|  LAYER 3: Network Gateway, State Engine & Conformance Validator (Weeks 6 - 8) [WP3]     |
-|  * PostgreSQL 16 Database Setup & Alembic Migrations                                    |
-|  * FastAPI REST Gateway with TLS 1.3 & Asynchronous Route Handlers                      |
-|  * Coordinator Round State Machine Engine with Quorum, Deadlines & Straggler Logic       |
-|  * Conformance Engine: Dtype, Shape, Column Order & Synthetic Vector Validation         |
-|  * State Persistence & Crash Recovery Mechanism (Resuming interrupted runs)             |
-+-----------------------------------------------------------------------------------------+
-                                           |
-                                           v
-+-----------------------------------------------------------------------------------------+
-|  LAYER 4: Multi-Node WAN Deployment & Robustness Testing (Weeks 9 - 11) [WP4]           |
-|  * Docker Containerization (`cfl-coordinator`, `cfl-gateway`, `cfl-client`, `caddy`)   |
-|  * Real Internet WAN Deployment across student laptops, university servers & cloud VMs  |
-|  * Fault Injection Suite (client delay, sudden dropout, duplicate updates, coordinator kill)|
-|  * Automated End-of-Run Markdown & JSON Report Generator with Matplotlib Plots          |
-+-----------------------------------------------------------------------------------------+
-                                           |
-                                           v
-+-----------------------------------------------------------------------------------------+
-|  LAYER 5: Presentation, Observability & Multi-Modal Experiments (Weeks 12 - 14) [WP5]   |
-|  * Next.js Web Application (Public Documentation & Authenticated Control Dashboard)     |
-|  * Grafana Telemetry Dashboard Integration via Prometheus/PostgreSQL                    |
-|  * Multi-Modal Dataset Evaluations (MedMNIST Image & UCI SMS Spam Text)                 |
-|  * (Optional) Non-IID Dirichlet Skew & Differential Privacy Experiments                 |
-|  * Final Project Poster, Demo Video & Capstone Technical Report                         |
-+-----------------------------------------------------------------------------------------+
-```
+| Weeks | WP | Layer | Key outputs | Milestones |
+| :--- | :--- | :--- | :--- | :--- |
+| 1–2 | WP1 | Design, specification & data | Architecture, state machine, sequence and deployment diagrams; scope (this document); API spec, DB schema, conformance manifest spec; banking dataset (UCI Bank Marketing as fallback) cleaned with IID partition; web site plan; repo and task tracking | M1.1–M1.3 |
+| 3–5 | WP2 | FL core in simulation | Transport interface + in-memory implementation; tabular MLP; FedAvg, FedProx, partial participation; automated tests; centralized/local-only/federated baselines; model tuning | M2.1–M2.3 |
+| 3–4 | WP3 | Secure API gateway | FastAPI gateway behind Caddy/TLS; PostgreSQL tables + Alembic migrations; approved-list registration and per-client tokens; update intake with checksum; HTTPS transport | M3.1–M3.3 |
+| 4–6 | WP4 | Orchestration & fault tolerance | Round state machine persisted in PostgreSQL; quorum, timeouts, retries; stale/duplicate handling; dropout, reconnection, coordinator resume; failure-case tests; first multi-machine Internet run | M4.1–M4.4 (mid-demo) |
+| 5–7 | WP5 | Client compatibility & conformance | Manifest format; client-side checker with reference test cases; gateway/coordinator enforcement; managed-code Docker client with version check; mismatch tests | M5.1–M5.3 |
+| 4–12 | WP6 | Observability & web application | Public site online (week 4) and maintained weekly; event and metric logging; authenticated internal area; end-of-training report and plots (week 6); Grafana on PostgreSQL | M6.1–M6.4 |
+| 5–10 | WP7 | Experiments & evaluation | Second-modality pipeline and manifest; experiment design; runs on separate machines incl. failure scenarios; analysis tables/plots; reproducibility package | M7.1–M7.3 |
+| 6–10 | WP8 | Final model delivery (+ optional privacy) | Versioned, checksummed artifact; ONNX export verified against PyTorch; download endpoint and client-side verification; (optional) clipping + noise | M8.1, (M8.2) |
+| 8–12 | WP9 | Poster, demo video & final report | Final report, poster, demo video, clean repository with run instructions | M9.1–M9.3 |
 
 ---
 
 ## 6. Acceptance Criteria for T1.1 Sign-Off
 
-- [x] Clear demarcation between mandatory core features and optional research extensions.
-- [x] Explicit definition of cross-silo real-world distributed assumptions (no raw data leakage, client-side firewalls, independent client conformance).
-- [x] Formal definition of public and authenticated web application page hierarchy.
-- [x] Ordered, 5-layer incremental build sequence aligned with project weeks and course deliverables.
-- [x] Full alignment with advisor directives and Capstone guidelines.
+- [x] Clear demarcation between mandatory core features, optional extensions and out-of-scope items.
+- [x] Explicit cross-silo assumptions (no raw data leaves clients, client-initiated connections, independent client conformance).
+- [x] Public and authenticated web application page hierarchy defined.
+- [x] Build order aligned with the proposal's work packages, weeks and milestones.
+- [x] Every mandatory requirement and deliverable of the Capstone Project Description is mapped to a section of this document.
+- [ ] Reviewed by the team.
+- [ ] Reviewed by the advisors.
