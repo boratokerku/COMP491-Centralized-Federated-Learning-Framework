@@ -1,0 +1,55 @@
+# Dataset config for UCI Bank Marketing (bank-additional-full.csv).
+# The pre-processing code reads only from this file; switching to another tabular dataset
+# (e.g. the advisors' banking data) needs a new config, not new code.
+#
+# Category lists and scaling statistics are FIXED here and versioned with
+# preprocessing_version. Clients must never fit encoders or scalers on their own data,
+# otherwise the same input would be encoded differently on different clients.
+# Scaling statistics: mean / population std over the full public dataset (reference values
+# agreed by the federation; pdays statistics exclude the 999 sentinel).
+
+name: bank_marketing
+preprocessing_version: "1.0"
+file: data/tabular/raw/bank-additional-full.csv
+separator: ";"
+
+label:
+  column: y
+  positive: "yes"
+  negative: "no"
+
+# Order matters: the model input follows this order (numeric first, then one-hot blocks).
+features:
+  - {name: age, type: numeric, unit: years, mean: 40.0241, std: 10.4211}
+  - {name: campaign, type: numeric, unit: contacts, mean: 2.56759, std: 2.76998}
+  - name: pdays
+    type: numeric
+    unit: days
+    mean: 6.01452
+    std: 3.82364
+    sentinel: 999          # "not previously contacted"
+    sentinel_fill: 6.01452 # replaced by the mean; an indicator column pdays_is_sentinel is added
+  - {name: previous, type: numeric, unit: contacts, mean: 0.172963, std: 0.494895}
+  - {name: emp.var.rate, type: numeric, unit: percent (quarterly), mean: 0.0818855, std: 1.57094}
+  - {name: cons.price.idx, type: numeric, unit: index (monthly), mean: 93.5757, std: 0.578833}
+  - {name: cons.conf.idx, type: numeric, unit: index (monthly), mean: -40.5026, std: 4.62814}
+  - {name: euribor3m, type: numeric, unit: percent (daily), mean: 3.62129, std: 1.73443}
+  - {name: nr.employed, type: numeric, unit: thousands of employees (quarterly), mean: 5167.04, std: 72.2507}
+  - name: job
+    type: categorical
+    categories: [admin., blue-collar, entrepreneur, housemaid, management, retired, self-employed, services, student, technician, unemployed, unknown]
+  - {name: marital, type: categorical, categories: [divorced, married, single, unknown]}
+  - name: education
+    type: categorical
+    categories: [basic.4y, basic.6y, basic.9y, high.school, illiterate, professional.course, university.degree, unknown]
+  - {name: default, type: categorical, categories: ["no", "yes", unknown]}
+  - {name: housing, type: categorical, categories: ["no", "yes", unknown]}
+  - {name: loan, type: categorical, categories: ["no", "yes", unknown]}
+  - {name: contact, type: categorical, categories: [cellular, telephone]}
+  # All 12 months from the dataset documentation (jan and feb do not occur in this file).
+  - {name: month, type: categorical, categories: [jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec]}
+  - {name: day_of_week, type: categorical, categories: [mon, tue, wed, thu, fri]}
+  - {name: poutcome, type: categorical, categories: [failure, nonexistent, success]}
+
+# duration: known only after the call ends and leaks the label (see dataset documentation).
+drop: [duration]
