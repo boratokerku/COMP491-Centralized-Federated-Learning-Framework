@@ -3,36 +3,45 @@ autonumber
 skinparam shadowing false
 skinparam defaultFontName Arial
 
-participant Coordinator as "Coordinator State Machine"
+participant Coordinator as "Coordinator\n(separate process)"
 database DB as "PostgreSQL"
 database Storage as "File Storage (/data/models/)"
+participant Gateway as "FastAPI Gateway"
 actor Admin as "System / Administrator"
 
 == Regular Execution with State Persistence ==
 Note over Coordinator, DB
   Coordinator saves state after EVERY transition:
-  - run_id, active_round_id, status (COLLECTING/AGGREGATING)
-  - latest global model version and path
+  - run_id, current round_id, round state
+  - latest global model version, path and checksum
 end note
-Coordinator -> DB : UPDATE rounds SET status='AGGREGATING' WHERE round_id=5
-Coordinator -> Storage : Write global_model_v6.safetensors
-Coordinator -> DB : UPDATE rounds SET status='COMPLETED' WHERE round_id=5
-Coordinator -> DB : UPDATE runs SET current_round=6 WHERE run_id='run-101'
+Coordinator -> DB : UPDATE rounds SET state='AGGREGATING' WHERE round_id=5
+Coordinator -> Storage : Write global_model_v6.safetensors (+ SHA-256)
+Coordinator -> DB : UPDATE rounds SET state='DONE' WHERE round_id=5
+Coordinator -> DB : UPDATE runs SET model_version=6
+Coordinator -> DB : INSERT round 6, state='OPEN' → 'COLLECTING'
 
-== Unexpected Crash ==
-Note over Coordinator : [CRASH: Power failure / Process killed / OOM]
+== Unexpected Crash During Round 6 ==
+Note over Coordinator : [CRASH: process killed / power failure / OOM]
+Note over Gateway, DB
+  The gateway is a separate process and keeps running:
+  clients can still poll and upload; updates are stored as usual.
+end note
 
 == Recovery & Resume ==
-Admin -> Coordinator : Start Coordinator process (Restart / systemd)
-Coordinator -> DB : SELECT * FROM runs WHERE status='IN_PROGRESS'
-DB --> Coordinator : run_id='run-101', current_round=6
-Coordinator -> DB : SELECT * FROM rounds WHERE run_id='run-101' ORDER BY round_id DESC LIMIT 1
-DB --> Coordinator : round_id=5 (status='COMPLETED'), model_version=6
-
+Admin -> Coordinator : Restart coordinator process
+Coordinator -> DB : SELECT run WHERE state='RUNNING'
+DB --> Coordinator : run_id='run-101', model_version=6
+Coordinator -> DB : Last round: round_id=6, state='COLLECTING'
 Coordinator -> Storage : Verify global_model_v6.safetensors exists & checksum matches
-Storage --> Coordinator : File Verified OK
+Storage --> Coordinator : OK
 
-Coordinator -> DB : Log Event: "COORDINATOR_RESUMED" (resuming from round 6)
-Coordinator -> Coordinator : Initialize Round 6 (State: OPEN)
-Note over Coordinator : Round 6 begins seamlessly.\nClients polling /task now receive round 6 without starting from round 0!
+alt Round 6 deadline not yet reached
+    Coordinator -> Coordinator : Continue round 6 (updates stored during the outage still count)
+else Round 6 deadline passed during the outage
+    Coordinator -> DB : Apply the normal deadline rule to round 6\n(aggregate if received >= min_participants, else FAILED)
+end
+
+Coordinator -> DB : Log event COORDINATOR_RESUMED (run-101, round 6)
+Note over Coordinator : The run continues from the last persisted state,\nnot from round 0.
 @enduml

@@ -57,13 +57,13 @@ title Centralized Federated Learning Framework (CFL) - End-to-End System Archite
 package "Participating Organizations (Cross-Silo Client Sites)" as ClientsLayer {
 
     node "Organization A (Managed-Code Mode)" as NodeA {
-        [cfl-client (Docker Container)\n-- Client Subsystems --\n• Conformance Self-Checker (Manifest & Synthetic Test)\n• Local PyTorch Trainer (FedAvg / FedProx)\n• Pluggable Transport (InMemory / HTTPSTransport)\n• Serializer (.safetensors) & SHA-256 Hasher\n• Final Model Verifier (ONNX Test Inference)] as ClientA
-        database "Private Local Data A\n[Tabular / Medical Image / Text]\n(Held Strictly Confidential)" as DataA
+        [cfl-client (Docker Container)\n-- Client Subsystems --\n• Conformance Self-Checker (Manifest & Synthetic Test)\n• Local PyTorch Trainer (FedAvg / FedProx)\n• HTTPS Transport (InMemory only in simulation mode)\n• Serializer (.safetensors) & SHA-256 Hasher\n• Final Model Verifier (ONNX Test Inference)] as ClientA
+        database "Private Local Data A\n[Tabular + Image or Text]\n(Held Strictly Confidential)" as DataA
         ClientA -left-> DataA : Local Read
     }
 
     node "Organization B (Independent Mode)" as NodeB {
-        [Custom Client App (Python / PyTorch)\n-- Conformance Requirements --\n• Complies with Conformance Contract\n• Feature Order, Types & Unit Matching\n• HTTPS REST Client with Bearer Token] as ClientB
+        [Own Client Implementation (any language)\n-- Conformance Requirements --\n• Same model architecture & parameter shapes\n• Passes Conformance Manifest checks\n• Feature Order, Types & Unit Matching\n• HTTPS REST Client with Bearer Token] as ClientB
         database "Private Local Data B\n(Held Strictly Confidential)" as DataB
         ClientB -left-> DataB : Local Read
     }
@@ -76,7 +76,10 @@ package "Participating Organizations (Cross-Silo Client Sites)" as ClientsLayer 
 ' ==============================================================================
 ' 2. NETWORK & SECURITY INGRESS
 ' ==============================================================================
-cloud "Public Internet / Campus WAN  [TLS 1.3 / HTTPS (Port 443)]" as Internet
+cloud "Public Internet  [HTTPS / TLS (Port 443)]" as Internet
+
+cloud "GitHub Container Registry (private)\ncfl-client image (tag + digest)\nor docker save archive" as Registry
+Registry ..> ClientA : Managed-code image
 
 ClientA --> Internet : HTTPS Traffic
 ClientB --> Internet : HTTPS Traffic
@@ -85,49 +88,53 @@ ClientC --> Internet : HTTPS Traffic
 ' ==============================================================================
 ' 3. CENTRAL SERVER HOST
 ' ==============================================================================
-node "Central Server (Cloud VM / University Cluster Host)" as CentralServer {
+node "Central Server (location: open decision A1)" as CentralServer {
 
     package "Ingress & Edge Security (Docker: cfl-caddy)" as IngressPkg {
-        [Caddy Reverse Proxy & Edge Router\n• Auto TLS 1.3 Certificate (Let's Encrypt / CA)\n• Route /api/* -> FastAPI Gateway (:8000)\n• Route /* -> Next.js Web App (:3000)\n• SSL Termination & Security Headers] as Caddy
+        [Caddy Reverse Proxy & Edge Router\n• TLS termination (certificate source: open decision S2)\n• Route /api/* -> FastAPI Gateway (:8000)\n• Route /grafana/* -> Grafana (auth proxy)\n• Route /* -> Next.js Web App (:3000)\n• Plain HTTP refused] as Caddy
     }
 
-    Internet --> Caddy : Port 443 / 80
+    Internet --> Caddy : Port 443
 
     package "Core Backend Services (Docker Compose Stack)" as BackendStack {
-        [cfl-gateway (FastAPI Container)\n-- REST Ingress Subsystems --\n• Endpoints: /register, /conformance, /task, /model, /update\n• Bearer Token Authentication & Whitelist\n• Idempotency & Stale Filter (update_id)\n• Payload SHA-256 Checksum Validation] as Gateway
+        [cfl-gateway (FastAPI Container)\n-- REST Ingress Subsystems --\n• Endpoints: /register, /conformance, /task, /model, /update\n• Read-only API for the web app\n• Bearer Token Authentication & Approved List\n• Conformance Report Re-check\n• Idempotency & Stale Filter (update_id)\n• Payload SHA-256 Checksum Validation] as Gateway
 
-        [cfl-coordinator (Federation Engine)\n-- Orchestration Subsystems --\n• Round State Machine (INIT/OPEN/COLL/AGG/DONE/FAILED)\n• Quorum & Timeout Manager (Deadlines & Stragglers)\n• Strategy Engine (FedAvg, FedProx, Centralized & Local Baselines)\n• State Persistence & Crash Recovery (Auto-Resume)\n• Model Artifact Packager & ONNX Exporter\n• Automated End-of-Run Report Generator] as Coordinator
+        [cfl-coordinator (Federation Engine)\n-- Orchestration Subsystems --\n• Round State Machine (OPEN/COLLECTING/AGGREGATING/DONE/FAILED)\n• Seeded Client Selection (partial participation)\n• Quorum & Deadline Manager (Stragglers)\n• Aggregation (FedAvg / FedProx) & Server-side Evaluation\n• State Persistence & Crash Recovery (Auto-Resume)\n• Model Artifact Packager & ONNX Exporter\n• Automated End-of-Run Report Generator] as Coordinator
 
-        Gateway <..> Coordinator : Round Events & Triggers
+        note "Gateway and Coordinator do not call each other:\nthey communicate only through PostgreSQL and file storage" as NoteIPC
     }
 
     Caddy --> Gateway : Reverse Proxy /api/*
 
     package "Storage & Persistence Layer (Docker Volumes)" as StorageStack {
-        database "cfl-postgres (PostgreSQL 16)\n-- Relational Database Tables --\n• runs (status, config, manifest_ver)\n• rounds (round_id, status, deadline, duration)\n• clients & conformance_reports\n• updates (update_id, num_samples, metrics)\n• events (dropout, timeout, resume)" as Postgres
+        database "cfl-postgres (PostgreSQL 16)\n-- Relational Database Tables --\n• runs (status, config, manifest_ver)\n• rounds (round_id, status, deadline, duration)\n• clients & conformance_reports\n• updates (update_id, num_samples, metrics)\n• events (dropout, timeout, resume)\n• metrics (timings, sizes, ML metrics)" as Postgres
 
         storage "Host Volume: /data/models/\n-- Model Weight Storage --\n• global_model_v(t).safetensors\n• client_updates_v(t).safetensors\n• final_model.onnx + .sha256" as ModelStorage
 
-        storage "Host Volume: /data/reports/\n-- Run Summary Artifacts --\n• experiment_summary.md\n• metrics_history.json / .csv\n• convergence_plots.png (Loss/F1/RTT)" as ReportStorage
+        storage "Host Volume: /data/reports/\n-- Run Summary Artifacts --\n• run_{id}_report.md\n• run_{id}_summary.json / .csv\n• plots (.png: ML & system metrics)" as ReportStorage
     }
 
     Gateway --> Postgres : Save Registrations & Updates
     Gateway --> ModelStorage : Store Client Weights
-    Coordinator --> Postgres : Persist State Transitions & Events
-    Coordinator --> ModelStorage : Read Updates & Save Global Model
+    Coordinator --> Postgres : Read Updates, Persist State Transitions & Events
+    Coordinator --> ModelStorage : Read Client Weights & Save Global Model
     Coordinator --> ReportStorage : Export Markdown, CSV & Plots
 
     package "Observability & Presentation Layer" as UIStack {
-        [cfl-frontend (Next.js Web Portal)\n-- Web Modules --\n• Public Zone: Project Scope, Methodology, Team, Video, Poster\n• Private Dashboard: Live Round Monitor, Inbox, Logs, Reports] as WebApp
+        [cfl-frontend (Next.js Web Portal)\n-- Web Modules --\n• Public Area: Overview, Docs, Results, Team\n• Internal Area (single admin login, polling):\n  Rounds, Clients & Conformance, Updates, Logs, Reports\n• Optional: Grafana panels as iframes] as WebApp
 
-        [cfl-grafana (Grafana Server :3001)\n-- Telemetry Dashboards --\n• Round Duration & Compute vs Wait Panes\n• Per-Client Loss / Accuracy / F1 Curves\n• Transfer Bytes, Latency & Dropout Rates] as Grafana
+        [cfl-grafana (Grafana, dashboards as code)\n-- Telemetry Dashboards --\n• Round Duration & Compute vs Wait Panes\n• Per-Client Loss / Accuracy / F1 Curves\n• Transfer Bytes, Latency & Dropout Rates] as Grafana
     }
 
     Caddy --> WebApp : Reverse Proxy /*
-    Postgres --> WebApp : Query Runs, Rounds & Logs
-    Postgres --> Grafana : Telemetry Stream
-    ModelStorage --> WebApp : Serve Model Checksums
-    ReportStorage --> WebApp : Download Reports & Plots
+    Caddy --> Grafana : Reverse Proxy /grafana/* (auth proxy)
+    WebApp --> Gateway : Read-only API (runs, rounds, clients, logs, reports)
+    Gateway --> ReportStorage : Serve Reports & Plots
+    Postgres --> Grafana : SQL queries (metrics)
+    WebApp ..> Grafana : Optional iframe panels
+
+    actor "Administrator" as Admin
+    Admin --> Postgres : Admin CLI: approve clients, issue tokens
 }
 
 @enduml

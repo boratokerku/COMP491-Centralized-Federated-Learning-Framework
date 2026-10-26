@@ -5,8 +5,8 @@ skinparam roundcorner 8
 skinparam shadowing false
 skinparam packageStyle rectangle
 
-skinparam nodesep 25
-skinparam ranksep 35
+skinparam nodesep 40
+skinparam ranksep 70
 
 skinparam node {
     BorderColor #2C3E50
@@ -53,27 +53,35 @@ title Centralized Federated Learning Framework - Multi-Machine Deployment Topolo
 ' ==============================================================================
 package "Distributed Client Machines (Simulating Independent Silos)" as ClientsPkg {
 
-    node "Client Machine 1\n(Workstation / Laptop)" as Node1 {
-        [cfl-client (Docker/Python)\n- Conformance Checker\n- PyTorch Local Trainer\n- Safetensors Serializer] as Agent1
-        database "Local Data Partition 1\n(Tabular / Image / Text)" as Data1
+    note as ClientPlan
+      First trial: all clients on team members' machines.
+      University cluster nodes as additional clients:
+      to be confirmed with the advisors (open decision A15).
+      Every client runs the cfl-client Docker image.
+    end note
+
+
+    node "Client Machine 1\n(Team Member Machine)" as Node1 {
+        [cfl-client (Docker container)\n- Conformance Checker\n- PyTorch Local Trainer\n- Safetensors Serializer] as Agent1
+        database "Local Data Partition 1\n(Tabular + Image or Text)" as Data1
         Agent1 -down-> Data1 : Read
     }
 
-    node "Client Machine 2\n(University Cluster Node)" as Node2 {
-        [cfl-client (Docker/Python)\n- Conformance Checker\n- PyTorch Local Trainer\n- Safetensors Serializer] as Agent2
-        database "Local Data Partition 2\n(Tabular / Image / Text)" as Data2
+    node "Client Machine 2\n(University Cluster Node,\nto be confirmed: A15)" as Node2 {
+        [cfl-client (Docker container)\n- Conformance Checker\n- PyTorch Local Trainer\n- Safetensors Serializer] as Agent2
+        database "Local Data Partition 2\n(Tabular + Image or Text)" as Data2
         Agent2 -down-> Data2 : Read
     }
 
-    node "Client Machine 3\n(Cloud VM / Remote Host)" as Node3 {
-        [cfl-client (Docker/Python)\n- Conformance Checker\n- PyTorch Local Trainer\n- Safetensors Serializer] as Agent3
-        database "Local Data Partition 3\n(Tabular / Image / Text)" as Data3
+    node "Client Machine 3\n(Team Member Machine)" as Node3 {
+        [cfl-client (Docker container)\n- Conformance Checker\n- PyTorch Local Trainer\n- Safetensors Serializer] as Agent3
+        database "Local Data Partition 3\n(Tabular + Image or Text)" as Data3
         Agent3 -down-> Data3 : Read
     }
 
-    node "Client Machine 4\n(Fault Injection Simulator)" as Node4 {
-        [cfl-client (Test Mode)\n- Straggler / Artificial Delay\n- Mid-Round Disconnection\n- Stale Update Generator] as Agent4
-        database "Local Data Partition 4\n(Tabular / Image / Text)" as Data4
+    node "Client Machine 4\n(Team Member Machine,\nFault Injection)" as Node4 {
+        [cfl-client (Docker container, test mode)\n- Straggler / Artificial Delay\n- Mid-Round Disconnection\n- Stale Update Generator] as Agent4
+        database "Local Data Partition 4\n(Tabular + Image or Text)" as Data4
         Agent4 -down-> Data4 : Read
     }
 }
@@ -81,59 +89,61 @@ package "Distributed Client Machines (Simulating Independent Silos)" as ClientsP
 ' ==============================================================================
 ' 2. PUBLIC NETWORK / WAN (CENTER)
 ' ==============================================================================
-cloud "Public Internet / Campus WAN  [TLS 1.3 / HTTPS (Port 443)]" as WAN
+cloud "Public Internet  [HTTPS / TLS (Port 443)]" as WAN
+
+cloud "GitHub Container Registry (private)\ncfl-client:<version>" as Registry
 
 Agent1 -down-> WAN : HTTPS (Port 443)
 Agent2 -down-> WAN : HTTPS (Port 443)
 Agent3 -down-> WAN : HTTPS (Port 443)
 Agent4 -down-> WAN : HTTPS (Port 443)
+Registry ..> ClientsPkg : docker pull / docker load (managed code)
 
 ' ==============================================================================
 ' 3. CENTRAL COORDINATION SERVER (BOTTOM)
 ' ==============================================================================
-node "Central Server (Server / Cloud VM with Public IP)" as ServerHost {
+node "Central Server (location: open decision A1)" as ServerHost {
 
     package "Edge Reverse Proxy" as IngressPkg {
-        [cfl-caddy (Docker Container)\n- Auto TLS 1.3 Termination (Let's Encrypt / CA)\n- Ingress Router (/api/* -> Gateway | /* -> WebApp)\n- Security Headers & SSL Termination] as Caddy
+        [cfl-caddy (Docker Container)\n- TLS Termination (certificate: open decision S2)\n- /api/* -> Gateway | /grafana/* -> Grafana | /* -> WebApp\n- Only port 443 exposed; plain HTTP refused] as Caddy
     }
 
-    WAN -down-> Caddy : Port 443 / 80
+    WAN -down-> Caddy : Port 443
 
     package "Docker Compose Stack: cfl-backend" as BackendStack {
-        [cfl-gateway (FastAPI Container)\n- REST Endpoints (:8000)\n- Bearer Token Auth & Checksums\n- Idempotency & Stale Filters] as Gateway
+        [cfl-gateway (FastAPI Container)\n- REST Endpoints (:8000, internal only)\n- Bearer Token Auth & Checksums\n- Conformance Re-check\n- Idempotency & Stale Filters\n- Read-only API for WebApp] as Gateway
 
-        [cfl-coordinator (Engine Container)\n- Round State Machine (OPEN/COLL/AGG/DONE)\n- FedAvg & FedProx Aggregator\n- Crash Recovery & State Resume] as Coordinator
+        [cfl-coordinator (Engine Container)\n- Round State Machine (OPEN/COLLECTING/AGGREGATING/DONE/FAILED)\n- Seeded Client Selection, FedAvg & FedProx\n- Crash Recovery & State Resume] as Coordinator
 
-        Gateway <..> Coordinator : Round Events & Triggers
     }
 
     Caddy -down-> Gateway : Proxy /api/* (:8000)
 
     package "Docker Compose Stack: cfl-storage" as StorageStack {
-        storage "Host Volume: /data/models/\n- global_model_v(t).safetensors\n- client_updates_v(t).safetensors\n- final_model.onnx + sha256" as VolModels
+        storage "Host Volume: /data/models/\n- global_model_v(t).safetensors\n- client_updates_v(t).safetensors\n- final_model.onnx / .safetensors + sha256" as VolModels
 
         database "cfl-postgres (PostgreSQL 16)\n- Runs, Rounds, Clients\n- Conformance Reports\n- Updates & Telemetry Logs" as Postgres
 
-        storage "Host Volume: /data/reports/\n- experiment_summary.md\n- metrics_history.csv / .json\n- convergence_plots.png" as VolReports
+        storage "Host Volume: /data/reports/\n- run_{id}_report.md\n- run_{id}_summary.json / .csv\n- plots (.png)" as VolReports
     }
 
     Gateway -down-> VolModels : Write Updates
     Gateway -down-> Postgres : Save Metadata
-    Coordinator -down-> Postgres : Persist State
-    Coordinator -down-> VolModels : Save Global Model
+    Coordinator -down-> Postgres : Read Updates & Persist State
+    Coordinator -down-> VolModels : Read Weights & Save Global Model
     Coordinator -down-> VolReports : Export Reports & Plots
 
     package "Docker Compose Stack: cfl-ui" as UIStack {
-        [cfl-frontend (Next.js Web Portal)\n- Public Area (Overview, Video, Poster)\n- Private Dashboard (Live Rounds, Logs)] as WebApp
+        [cfl-frontend (Next.js Web Portal)\n- Public Area (Overview, Docs, Results, Team)\n- Internal Area (admin login, polling)] as WebApp
 
-        [cfl-grafana (Grafana Server :3001)\n- Loss / Accuracy / F1 Curves\n- Round Durations & Dropout Rates] as Grafana
+        [cfl-grafana (dashboards as code)\n- Loss / Accuracy / F1 Curves\n- Round Durations, Latency & Dropout Rates] as Grafana
     }
 
     Caddy -down-> WebApp : Proxy /* (:3000)
-    Postgres -down-> WebApp : Query Runs & Logs
-    Postgres -down-> Grafana : Telemetry Stream
-    VolReports -down-> WebApp : Download Reports
-    VolModels -down-> WebApp : Download Models
+    Caddy -down-> Grafana : Proxy /grafana/* (auth proxy)
+    WebApp -up-> Gateway : Read-only API
+    Gateway -down-> VolReports : Serve Reports
+    Postgres -down-> Grafana : SQL queries
 }
 
 @enduml

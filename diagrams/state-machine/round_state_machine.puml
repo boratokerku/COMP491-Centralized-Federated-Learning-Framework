@@ -7,53 +7,53 @@ skinparam state {
 skinparam shadowing false
 skinparam defaultFontName Arial
 
-title Federated Learning - Round State Machine
+title Federated Learning - Round State Machine (one round)
 
-[*] --> INIT : Initialize Experiment
-
-INIT --> OPEN : Start New Round (round_id = t)
+[*] --> OPEN : Coordinator opens round t\n(new round_id)
 note right of OPEN
-  - Publish global model v_t to Storage
-  - Broadcast task config via /task
-  - Set round deadline timer
+  - Global model v_t published to file storage (+ SHA-256)
+  - Random subset of available, conformant clients
+    selected (configurable fraction, fixed seed)
+  - Round deadline written to PostgreSQL
 end note
 
-OPEN --> COLLECTING : First Valid Client Update Received
+OPEN --> COLLECTING : Tasks published to selected clients\n(clients receive them via GET /task polling)
 note right of COLLECTING
-  - Accept updates via POST /update
-  - Check idempotency (update_id)
-  - Verify SHA-256 and client token
-  - Reject duplicate / stale updates
+  Gateway accepts POST /update:
+  - Client token verified
+  - SHA-256 checksum verified
+  - Same update_id again -> idempotent OK (retry)
+  - Other update for same (run, round, client) -> duplicate, rejected
+  - Closed round / old model version -> stale, rejected
 end note
 
-COLLECTING --> AGGREGATING : Quorum Met (count >= min_participants)\nOR (Timeout AND count >= min_participants)
+COLLECTING --> AGGREGATING : All selected clients reported\nOR (deadline reached AND received >= min_participants)
 note right of AGGREGATING
-  - Lock round updates
-  - Compute weighted FedAvg / FedProx
-  - Evaluate new global model v_{t+1}
-  - Persist round metrics to PostgreSQL
+  - Updates arriving now are rejected as stale
+  - Weighted average of client weights (FedAvg / FedProx)
+  - Evaluate v_{t+1} on server-side held-out test set
+  - Persist new model + round metrics
 end note
 
-COLLECTING --> FAILED : Timeout AND count < min_participants
-note left of FAILED
-  - Quorum not satisfied
-  - Log failure reason in PostgreSQL
-  - Trigger retry round or abort
+COLLECTING --> FAILED : Deadline reached AND received < min_participants
+OPEN --> FAILED : Not enough available clients
+AGGREGATING --> FAILED : Aggregation / evaluation error
+note right of FAILED
+  - Failure reason recorded in PostgreSQL
+  - Global model stays at v_t
 end note
 
-FAILED --> OPEN : Retry Round (Same or incremented round)
-FAILED --> [*] : Max Round Retries Exceeded
+AGGREGATING --> DONE : Global model v_{t+1} saved
 
-AGGREGATING --> OPEN : Round Successful & round_id < max_rounds
-note top of OPEN : round_id = t + 1
+DONE --> [*]
+FAILED --> [*]
 
-AGGREGATING --> DONE : Round Successful & round_id == max_rounds
-note right of DONE
-  - Export final model artifact (ONNX / safetensors)
-  - Generate Markdown & JSON/CSV reports
-  - Notify clients via GET /model/final
+note as RunLevel
+  Every state transition is persisted to PostgreSQL before the next step,
+  so a restarted coordinator can resume the run.
+  Run level (outside this diagram): after DONE or FAILED the coordinator opens
+  the next round with a new round_id, until the configured number of rounds is reached;
+  then the final model is packaged (safetensors + ONNX + SHA-256) and the report is generated.
 end note
-
-DONE --> [*] : Experiment Complete
 
 @enduml
