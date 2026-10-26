@@ -5,7 +5,7 @@ skinparam defaultFontName Arial
 
 participant Coordinator as "Coordinator State Machine"
 database DB as "PostgreSQL"
-folder Storage as "File Storage"
+database Storage as "File Storage (/data/models/)"
 actor Admin as "System / Administrator"
 
 == Regular Execution with State Persistence ==

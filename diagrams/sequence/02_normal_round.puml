@@ -2,54 +2,125 @@
 autonumber
 skinparam shadowing false
 skinparam defaultFontName Arial
+skinparam roundcorner 8
 
 actor Client as "Client Node"
 participant Gateway as "FastAPI Gateway"
 participant Coordinator as "Coordinator State Machine"
-folder Storage as "File Storage (.safetensors)"
+database Storage as "File Storage (/data/models/)"
 database DB as "PostgreSQL"
+participant Observability as "Reports & Observability"
 
-== Task Polling & Model Download ==
+' ==============================================================================
+' ÖN FAZ: ONBOARDING & CONFORMANCE
+' ==============================================================================
+== Ön Faz: Onboarding & Conformance Doğrulaması ==
+Client -> Gateway : POST /register (client_id, manifest_version, auth_token)
+Gateway -> DB : İstemci kimlik ve token doğrulaması
+alt Token Geçersiz veya Listede Yok
+    Gateway --> Client : 401 Unauthorized / 403 Forbidden
+else Token Geçerli
+    Client -> Gateway : POST /conformance/verify (manifest_version, local_test_report)
+    Gateway -> Gateway : Conformance Raporunu Değerlendir
+    note over Gateway
+      Uyumluluk Kontrolleri:
+      • Model tensör şekilleri ve parametre boyutları
+      • Kolon adları, feature sırası ve veri tipleri
+      • Kategorik encoding ve preprocessing versiyonu
+      • Birimler ve etiket değer aralıkları
+      • Sentetik referans girdi ile beklenen çıktı testi
+    end note
+    alt Uyumsuz İstemci (Mismatch)
+        Gateway -> DB : Reddet ve sebebi kaydet (conformance_reports)
+        Gateway --> Client : 422 Unprocessable Entity (Detaylı Hata Nedeni)
+    else Doğrulama Başarılı
+        Gateway -> DB : İstemciyi "CONFORMANT" olarak kaydet
+        Gateway --> Client : 200 OK (Kayıt Kabul Edildi)
+    end
+end
+
+' ==============================================================================
+' PHASE 1: MODELİ CLIENT'LARA DAĞITMA
+' ==============================================================================
+== Phase 1: Modeli Client'lara Dağıtma (Task Polling & Model Download) ==
 loop Task Polling
     Client -> Gateway : GET /task (client_id)
-    Gateway -> Coordinator : Get Current Round State
+    Gateway -> Coordinator : Tur Durumunu Sorgula
     Coordinator --> Gateway : Round State (OPEN, round_id=t, deadline, config)
     Gateway --> Client : TaskAssignment (round_id=t, deadline, hyperparams)
 end
 
 Client -> Gateway : GET /model/{run_id}/{version=t}
-Gateway -> Storage : Fetch global_model_v{t}.safetensors
-Storage --> Gateway : Model file bytes + Checksum
-Gateway --> Client : Stream model weights + SHA-256
-Client -> Client : Verify SHA-256 integrity
+Gateway -> Storage : global_model_v(t).safetensors dosyasını oku
+Storage --> Gateway : Model ağırlıkları + SHA-256 Checksum
+Gateway --> Client : Model dosyasını aktar (+ SHA-256)
+Client -> Client : SHA-256 bütünlük kontrolünü doğrula
 
-== Local Training ==
+' ==============================================================================
+' PHASE 2: CLIENT-SIDE MODEL EĞİTİMİ
+' ==============================================================================
+== Phase 2: Client-Side Model Eğitimi (Local PyTorch Training) ==
 Note over Client
-  Train PyTorch model locally:
-  - Local dataset partition
-  - Local epochs (E) & learning rate (eta)
-  - Compute FedAvg weights or FedProx proximal loss
-  - Record pre/post training metrics (loss, F1)
-  - Compute update delta & SHA-256
+  İstemci lokal verisi üzerinde eğitir (Ham veri dışarı çıkmaz):
+  • Local dataset partition (Tabular / Medical Image / Text)
+  • Lokal epoch (E) ve öğrenme oranı (eta)
+  • FedAvg yerel adımı veya FedProx proksimal kaybı (mu)
+  • Eğitim öncesi/sonrası yerel doğruluk ve kayıp hesaplama
+  • Model delta farkını ve SHA-256 hash'ini paketle
 End Note
 
-== Update Upload ==
+' ==============================================================================
+' PHASE 3: MODELLERİN MERKEZE TAŞINMASI
+' ==============================================================================
+== Phase 3: Modellerin Merkeze Taşınması (Update Upload & Validation) ==
 Client -> Gateway : POST /update (run_id, round_id, update_id, num_samples, weights, sha256)
-Gateway -> DB : Check idempotency & stale status (UNIQUE run_id, round_id, client_id)
-alt Duplicate or Stale Update
+Gateway -> DB : Idempotency & Stale kontrolü (UNIQUE run_id, round_id, client_id)
+
+alt Mükerrer (Duplicate) veya Eski Turdan (Stale) Güncelleme
     Gateway --> Client : 409 Conflict / 400 Bad Request
-else Valid Update
-    Gateway -> Storage : Save client_{client_id}_v{t}.safetensors
-    Gateway -> DB : Insert update record, metrics, bytes_transferred
+else Geçerli Güncelleme
+    Gateway -> Storage : client_{client_id}_v(t).safetensors kaydet
+    Gateway -> DB : Güncelleme kaydı, transfer boyutu ve metrikleri yaz
     Gateway --> Client : 200 OK (UpdateAck accepted=true)
 end
 
-== Round Aggregation ==
-Coordinator -> Coordinator : Check Quorum (min_participants reached OR timeout)
-Coordinator -> Coordinator : Transition State: AGGREGATING
-Coordinator -> Storage : Read all accepted client updates for round t
-Coordinator -> Coordinator : Execute FedAvg / FedProx Aggregation
-Coordinator -> Storage : Save new global_model_v{t+1}.safetensors
-Coordinator -> DB : Commit round summary, duration, ML metrics (loss, accuracy, F1)
-Coordinator -> Coordinator : Advance to round t + 1 (State: OPEN)
+' ==============================================================================
+' PHASE 4: AĞIRLIKLARIN AGREGASYONU
+' ==============================================================================
+== Phase 4: Ağırlıkların Agregasyonu (Quorum & FedAvg/FedProx Aggregation) ==
+Coordinator -> Coordinator : Quorum Kontrolü (min_participants sağlandı VEYA timeout doldu)
+Coordinator -> Coordinator : Durum Geçişi: AGGREGATING
+Coordinator -> Storage : Bu turdaki tüm geçerli istemci ağırlıklarını oku
+Coordinator -> Coordinator : Ağırlıklı FedAvg / FedProx Agregasyonunu hesapla
+Coordinator -> Storage : Yeni global_model_v(t+1).safetensors dosyasını kaydet
+Coordinator -> DB : Tur süreleri, metrikler ve logları kaydet (Crash recovery için state yazılır)
+
+alt Turlar Devam Ediyor (round_id < max_rounds)
+    Coordinator -> Coordinator : Yeni turu başlat (round_id = t + 1, State: OPEN)
+    Note over Coordinator, Client : Döngü Phase 1'e geri döner (Yeni tur için)
+else Tüm Turlar Tamamlandı (round_id == max_rounds)
+    Coordinator -> Coordinator : Durum Geçişi: DONE
+end
+
+' ==============================================================================
+' PHASE 5: NİHAİ ÜRÜNÜN (FINAL MODEL) DAĞITILMASI
+' ==============================================================================
+== Phase 5: Nihai Ürünün Dağıtımı (Final Model Artifact & ONNX Delivery) ==
+Coordinator -> Storage : Final modelini ONNX formatına dönüştür (final_model.onnx)
+Coordinator -> Coordinator : ONNX modelini referans test girdileriyle doğrula
+Coordinator -> Storage : final_model.onnx ve final_model.sha256 kaydet
+Coordinator -> DB : Final model artifact bilgilerini ve checksum kaydet
+
+Client -> Gateway : GET /model/{run_id}/final
+Gateway -> Storage : final_model.onnx ve checksum oku
+Storage --> Gateway : Dosya baytları
+Gateway --> Client : Nihai modeli ve SHA-256 sağlama toplamını teslim et
+Client -> Client : Checksum doğrula ve yerel referans çıkarım testini çalıştır
+
+Coordinator -> Observability : Otomatik Raporlama ve Grafikleri Tetikle
+Observability -> DB : Tüm tur ve sistem verilerini topla
+Observability -> Storage : experiment_summary.md ve metrics.json/.csv üret
+Observability -> Storage : Kayıp, doğruluk, süre ve RTT grafiklerini çiz (.png)
+Observability -> Observability : Grafana panolarını güncelle
+
 @enduml
