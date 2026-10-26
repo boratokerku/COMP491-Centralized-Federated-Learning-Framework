@@ -60,17 +60,17 @@ Based on the official Capstone Project Description and the project proposal (adv
 1. **Neural Network Framework:** Built on PyTorch: an MLP for tabular data and a small CNN for images (or an embedding-based model for text, if text is chosen as the second modality).
 2. **Federated Optimization Algorithms:**
    - **FedAvg (Federated Averaging):** Sample-weighted averaging of local model weights.
-   - **FedProx:** Addition of a proximal regularization term $\frac{\mu}{2} \|w - w^t\|^2$ to the client local objective to address system and data heterogeneity.
+   - **FedProx:** Addition of a proximal term (with a coefficient μ) to the client local objective, keeping local models close to the global model to address system and data heterogeneity.
 3. **Dual Execution Modes:**
    - **Simulation Mode:** In-memory transport executing multiple virtual clients on a single machine for debugging, benchmarking and continuous integration.
    - **Real Distributed Mode:** Execution across separate machines (university servers, cloud VMs, team members' machines) over the Internet, using the same training and orchestration abstractions as simulation mode.
 4. **Data Distribution:** A fully randomized (IID) partition of each dataset across clients, generated with a fixed seed.
 
 #### B. Coordination & Orchestration Layer
-1. **Round State Machine:** Explicit transitions through `OPEN` $\to$ `COLLECTING` $\to$ `AGGREGATING` $\to$ `DONE` (or `FAILED` from any non-terminal state) with deterministic transition guards.
+1. **Round State Machine:** Explicit transitions through `OPEN` → `COLLECTING` → `AGGREGATING` → `DONE` (or `FAILED` from any non-terminal state) with deterministic transition guards.
 2. **Round Lifecycle:** Client registration, round initiation, model/configuration distribution, local training, update collection, aggregation and evaluation, with no manual step between rounds.
 3. **Partial Participation:** A configurable subset of registered clients is selected for each round.
-4. **Participation Quorum & Timeouts:** Configurable minimum client threshold ($K_{\min}$) and per-round deadline ($T_{\text{round}}$); at the deadline the round is aggregated with the clients that arrived or marked `FAILED` with a recorded reason.
+4. **Participation Quorum & Timeouts:** Configurable minimum number of participating clients and per-round deadline; at the deadline the round is aggregated with the clients that arrived or marked `FAILED` with a recorded reason.
 5. **Straggler & Dropout Handling:** Late updates are discarded after the deadline; clients that drop out before or during a round do not stall the run.
 6. **Retries & Reconnection:** Clients retry temporary connection failures with exponential backoff; a dropped client can rejoin in a later round.
 7. **Idempotency & Deduplication:** Duplicate and stale updates are rejected using a client-generated UUIDv4 `update_id` and a `UNIQUE(run_id, round_id, client_id)` constraint, plus round and model-version checks.
@@ -129,10 +129,10 @@ Automated tests for aggregation, FedProx, partial participation and reproducibil
 ### 3.2. Optional Features (If Time Permits)
 
 1. **Non-IID Partitioning Experiments:**
-   - Label skew (e.g., Dirichlet $\text{Dir}(\alpha)$ with varying $\alpha$, or clients missing classes).
+   - Label skew (e.g., highly imbalanced clients or clients missing classes).
    - Feature-distribution skew between client splits.
    - Exact construction to be decided with advisor input.
-2. **Privacy Extension:** Client-side clipping of the model update ($\Delta = w_{\text{local}} - w^t$) to an $\ell_2$-norm bound $C$ and Gaussian noise addition ($\Delta \leftarrow \Delta + \mathcal{N}(0, \sigma^2 C^2 I)$), measuring the effect on model quality. No formal differential-privacy guarantee or privacy accounting is claimed.
+2. **Privacy Extension:** Client-side clipping and noise addition on the model update, measuring the effect on model quality. The exact mechanism is decided only if this extension is taken up. No formal differential-privacy guarantee or privacy accounting is claimed.
 3. **Web Application Extras:** see Section 4.3.
 
 ### 3.3. Out of Scope
@@ -175,7 +175,7 @@ Online from week 4 (M6.1) and updated weekly until the end of the semester.
 
 | Route | View Name | Content |
 | :--- | :--- | :--- |
-| `/app/rounds` | **Round Viewer** | Current run and round state, participating clients, quorum ($K/K_{\min}$), deadline, stragglers. |
+| `/app/rounds` | **Round Viewer** | Current run and round state, participating clients, received vs. minimum required updates, deadline, stragglers. |
 | `/app/clients` | **Clients & Conformance** | Registered clients, last seen / online status, client version, conformance status (passed, or failed with reason and manifest version). |
 | `/app/updates` | **Update Inbox** | Updates in the current round: client ID, timestamp, sample count, SHA-256 checksum, accepted/rejected with reason. |
 | `/app/logs` | **Event Log** | Filterable event list from PostgreSQL (registrations, timeouts, rejections, aggregations, coordinator restarts). |
