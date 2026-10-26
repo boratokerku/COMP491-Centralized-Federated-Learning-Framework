@@ -1,0 +1,59 @@
+@startuml Sequence_Registration_Conformance
+autonumber
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor Admin as "Administrator"
+actor Client as "Client Node"
+participant Gateway as "FastAPI Gateway\n(behind Caddy, HTTPS)"
+participant Conformance as "Conformance Validator\n(in Gateway)"
+database DB as "PostgreSQL"
+
+== Approval (before the client connects) ==
+Admin -> DB : Admin CLI: add client to approved list\n(stores client_id + hashed token)
+Admin --> Client : Client token delivered out of band\n(never inside the client image)
+
+== Registration ==
+Client -> Gateway : POST /register (client_id, client_version = image tag + digest,\nprotocol_version) + Bearer token
+Gateway -> DB : Verify token hash & approved list
+
+alt Token invalid or client not approved
+    Gateway --> Client : 401 Unauthorized / 403 Forbidden
+else Managed-code client with unapproved version
+    Gateway -> DB : Log rejection (version mismatch)
+    Gateway --> Client : 403 Forbidden (version not approved)
+else Accepted
+    Gateway -> DB : Save client as REGISTERED
+    Gateway --> Client : 200 OK (current manifest version)
+
+    == Conformance Check ==
+    Client -> Gateway : GET /conformance/{manifest_version}
+    Gateway --> Client : Manifest (JSON) + synthetic reference inputs
+    Client -> Client : Run conformance checker locally\n(no raw data leaves the client)
+    Client -> Gateway : POST /conformance/report\n(metadata + pass/fail + outputs on reference inputs)
+    Gateway -> Conformance : Re-check report
+    note over Conformance
+      Checks:
+      1. Model architecture/version, parameter names & tensor shapes
+      2. Feature names, ordering and data types
+      3. Pre-processing & categorical encoding versions
+      4. Feature units, label semantics & ranges
+      5. Client outputs on reference inputs == expected outputs
+    end note
+
+    alt Mismatch detected
+        Conformance --> Gateway : Fail (reason, e.g. "feature_order_mismatch")
+        Gateway -> DB : Store failed report + reason (conformance_reports)
+        Gateway --> Client : 422 Unprocessable Entity (rejection details)
+    else All checks pass
+        Conformance --> Gateway : Pass
+        Gateway -> DB : Store passing report for this manifest version
+        Gateway --> Client : 200 OK (client may be selected for rounds)
+    end
+end
+
+note over DB
+  The coordinator only selects clients with a passing
+  report for the current manifest version.
+end note
+@enduml

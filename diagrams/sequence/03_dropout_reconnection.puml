@@ -1,0 +1,52 @@
+@startuml Sequence_Dropout_Reconnection
+autonumber
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor Client1 as "Client 1 (Healthy)"
+actor Client2 as "Client 2 (Drops out / Reconnects)"
+participant Gateway as "FastAPI Gateway"
+database DB as "PostgreSQL"
+participant Coordinator as "Coordinator\n(separate process)"
+
+== Round t: Temporary Connection Failure and Retry (Client 1) ==
+Client1 -> Gateway : POST /update (round t, update_id = U1)
+Gateway -> DB : Save update U1
+Gateway -x Client1 : 200 OK lost (connection drops)
+Client1 -> Client1 : Exponential backoff + jitter
+Client1 -> Gateway : POST /update (round t, same update_id = U1)
+Gateway -> DB : U1 already accepted
+Gateway --> Client1 : 200 OK (idempotent, not counted twice)
+
+== Round t: Client 2 Drops Out ==
+Note over Client2 : Client 2 loses its connection / crashes\n(no update sent)
+
+Coordinator -> DB : Round t deadline reached: count accepted updates
+alt All selected clients reported OR received >= min_participants
+    Coordinator -> DB : Record Client 2 as DROPOUT for round t
+    Coordinator -> Coordinator : Aggregate without Client 2
+    Coordinator -> DB : Round t = DONE
+else received < min_participants
+    Coordinator -> DB : Round t = FAILED (reason: quorum not met)\nGlobal model stays at v_t
+end
+Coordinator -> DB : Open next round t+1 (new round_id)
+
+== Late Update from Round t ==
+Client2 -> Gateway : POST /update (round t) after the deadline
+Gateway -> DB : Round t is closed
+Gateway --> Client2 : 409 Conflict (stale)
+
+== Round t+1: Client 2 Reconnects ==
+Client2 -> Gateway : GET /task (client_id = Client2)
+Gateway -> DB : Active round = t+1; is Client 2 selected?
+alt Client 2 selected for round t+1
+    Gateway --> Client2 : TaskAssignment (round_id = t+1, latest model version)
+    Client2 -> Gateway : GET /model/{run_id}/{latest version}
+    Gateway --> Client2 : Latest global model weights + SHA-256
+    Note over Client2 : Client 2 synchronizes to the latest model\nand trains normally
+    Client2 -> Gateway : POST /update (round t+1, new update_id)
+    Gateway --> Client2 : 200 OK (accepted)
+else Not selected this round
+    Gateway --> Client2 : 204 No Content (keeps polling)
+end
+@enduml

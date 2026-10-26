@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
       POSTGRES_DB: ${POSTGRES_DB:-cfl}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"   # local access only; never exposed publicly
     volumes:
       - pgdata:/var/lib/postgresql/data
 
@@ -17,7 +17,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in deploy/.env}
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"   # reached through Caddy (/grafana/) in deployment
     volumes:
       - grafana:/var/lib/grafana
     depends_on:

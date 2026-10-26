@@ -1,0 +1,145 @@
+@startuml Sequence_Normal_Round
+autonumber
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam roundcorner 8
+
+actor Client as "Client Node"
+participant Gateway as "FastAPI Gateway\n(behind Caddy, HTTPS)"
+database DB as "PostgreSQL"
+database Storage as "File Storage (/data/models/)"
+participant Coordinator as "Coordinator\n(separate process)"
+participant Observability as "Reports & Observability"
+
+note over Gateway, Coordinator
+  The gateway and the coordinator never call each other;
+  they communicate only through PostgreSQL and file storage.
+end note
+
+' ==============================================================================
+' PRE-PHASE: ONBOARDING & CONFORMANCE
+' ==============================================================================
+== Pre-Phase: Onboarding & Conformance (details: 01_registration_conformance) ==
+Client -> Gateway : POST /register + Bearer token
+Gateway -> DB : Check token, approved list and client version
+Gateway --> Client : 200 OK
+Client -> Gateway : POST /conformance/report (including outputs on reference inputs)
+Gateway -> DB : Re-check report and store the result
+Gateway --> Client : 200 OK (conformant) / 422 (mismatch, with reason)
+
+' ==============================================================================
+' PHASE 0: OPEN THE ROUND
+' ==============================================================================
+== Phase 0: Open the Round (OPEN) ==
+Coordinator -> Storage : global_model_v(t).safetensors (+ SHA-256)
+Coordinator -> DB : Select a random subset of conformant, available clients (seeded)
+Coordinator -> DB : Round t = OPEN → COLLECTING; store deadline and selected clients
+
+' ==============================================================================
+' PHASE 1: DISTRIBUTE THE MODEL TO CLIENTS
+' ==============================================================================
+== Phase 1: Distribute the Model (Task Polling & Model Download) ==
+loop Task polling at a configurable interval
+    Client -> Gateway : GET /task (client_id)
+    Gateway -> DB : Active round? Is this client selected?
+    alt Client not selected / no active round
+        Gateway --> Client : 204 No Content (no task)
+    else Client selected
+        Gateway --> Client : TaskAssignment (run_id, round_id=t, model_version=t, deadline, config)
+    end
+end
+
+Client -> Gateway : GET /model/{run_id}/{version=t}
+Gateway -> Storage : Read global_model_v(t).safetensors
+Gateway --> Client : Model file + SHA-256
+Client -> Client : Verify SHA-256
+
+' ==============================================================================
+' PHASE 2: CLIENT-SIDE TRAINING
+' ==============================================================================
+== Phase 2: Client-Side Training (Local PyTorch Training) ==
+Note over Client
+  The client trains on its local data (raw data never leaves the client):
+  • Evaluate global model v_t on the local test split (federated evaluation)
+  • Local epochs and learning rate come from the round config
+  • FedAvg: plain local training / FedProx: proximal term (μ) added to the loss
+  • Compute local metrics again after training
+  • Package updated weights as safetensors and compute SHA-256
+  • Generate a new update_id (UUIDv4)
+End Note
+
+' ==============================================================================
+' PHASE 3: UPLOAD UPDATES TO THE SERVER
+' ==============================================================================
+== Phase 3: Upload Updates (Update Upload & Validation) ==
+Client -> Gateway : POST /update (run_id, round_id, update_id, model_version,\nnum_samples, metrics, weights, sha256)
+Gateway -> Gateway : Verify token and SHA-256
+Gateway -> DB : Stale / duplicate check (UNIQUE run_id, round_id, client_id)
+
+alt Same update_id already accepted (retry after a lost response)
+    Gateway --> Client : 200 OK (UpdateAck, idempotent)
+else Another update_id already stored for this round (duplicate)
+    Gateway --> Client : 409 Conflict
+else Round closed, deadline passed or old model version (stale)
+    Gateway --> Client : 409 Conflict (stale)
+else Valid update
+    Gateway -> Storage : Save client_{client_id}_v(t).safetensors
+    Gateway -> DB : Store update record, transfer size/duration and client metrics
+    Gateway --> Client : 200 OK (UpdateAck accepted=true)
+end
+
+note over Client, Gateway
+  On network errors the client retries with exponential
+  backoff + jitter, reusing the same update_id.
+end note
+
+' ==============================================================================
+' PHASE 4: AGGREGATE THE WEIGHTS
+' ==============================================================================
+== Phase 4: Aggregation ==
+loop Coordinator checks the database periodically
+    Coordinator -> DB : Number of accepted updates for round t
+end
+
+alt All selected clients reported OR (deadline reached AND received >= min_participants)
+    Coordinator -> DB : Round t = AGGREGATING
+    Coordinator -> Storage : Read accepted client weights for this round
+    Coordinator -> Coordinator : Sample-weighted average (FedAvg / FedProx)
+    Coordinator -> Coordinator : Evaluate v(t+1) on the server-side held-out test set
+    Coordinator -> Storage : Save global_model_v(t+1).safetensors
+    Coordinator -> DB : Round t = DONE; round timings and metrics (for crash recovery)
+else Deadline reached AND received < min_participants
+    Coordinator -> DB : Round t = FAILED (reason stored); global model stays at v_t
+end
+
+alt More rounds to run
+    Coordinator -> Coordinator : Open a new round (new round_id)
+    Note over Coordinator, Client : The loop returns to Phase 0
+else Configured number of rounds reached
+    Coordinator -> DB : Run = COMPLETED
+end
+
+' ==============================================================================
+' PHASE 5: DELIVER THE FINAL MODEL
+' ==============================================================================
+== Phase 5: Final Model Delivery (Final Model Artifact & ONNX) ==
+Coordinator -> Storage : Export the final model to ONNX (final_model.onnx)
+Coordinator -> Coordinator : Compare ONNX and PyTorch outputs on the reference inputs
+Coordinator -> Storage : Save final_model.onnx + .safetensors + SHA-256
+Coordinator -> DB : Store final artifact info (version, run_id, manifest version, checksum)
+
+Client -> Gateway : GET /model/{run_id}/final + Bearer token
+Gateway -> Storage : Read final model and checksum
+Gateway --> Client : Final model + SHA-256
+Client -> Client : Verify checksum and reproduce the reference predictions
+
+Coordinator -> Observability : Trigger automatic reporting
+Observability -> DB : Collect all round, event and system metrics
+Observability -> Storage : Generate run_{id}_report.md, run_{id}_summary.json and CSV
+Observability -> Storage : Plot ML and system metrics (.png)
+note over Observability
+  Grafana needs no update step:
+  it reads metrics directly from PostgreSQL.
+end note
+
+@enduml
