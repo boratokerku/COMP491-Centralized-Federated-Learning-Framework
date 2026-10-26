@@ -16,9 +16,9 @@ strategy:
 
 rounds:
   num_rounds: 20
-  clients_per_round: 4
+  client_fraction: 1.0       # random subset of available clients per round (seeded)
   min_participants: 3
-  round_timeout_s: 120
+  round_deadline_s: 120
 
 client:
   local_epochs: 1

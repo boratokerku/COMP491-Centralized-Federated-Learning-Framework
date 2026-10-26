@@ -44,7 +44,7 @@ Based on the official Capstone Project Description and the project proposal (adv
 |  * FedAvg & FedProx (Proximal mu Loss)             (label / feature skew)         |
 |  * Round State Machine (5 states)                * Update Clipping + Gaussian     |
 |  * PostgreSQL 16 State Persistence & Resume        Noise (no formal DP guarantee) |
-|  * Client Registration & Authentication          * Interactive web extras         |
+|  * Client Registration & Authentication          * Web extras                     |
 |  * Pre-Round Conformance Manifest Check            (see Section 4.3)              |
 |  * Managed-Code (Docker) & Independent Clients                                    |
 |  * Real Internet Multi-Machine Deployment                                         |
@@ -125,7 +125,7 @@ The report alone must be sufficient to reconstruct what happened in a run withou
 
 #### G. Final Model Delivery
 1. The final global model is packaged as a versioned artifact with checksum, manifest version and run ID.
-2. ONNX export, verified against the PyTorch model on the reference test cases.
+2. ONNX export (`onnx`), verified with ONNX Runtime against the PyTorch model on the reference test cases.
 3. A gateway endpoint lets registered clients download the model and verify its checksum; unregistered clients are refused.
 
 #### H. Testing

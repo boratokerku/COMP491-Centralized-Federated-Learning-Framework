@@ -14,13 +14,15 @@ backend/
     gateway/       # FastAPI gateway (only entry point for clients)
     coordinator/   # round state machine (state lives in PostgreSQL)
     client/        # client runtime + conformance checker
-    tasks/         # one subpackage per modality: tabular/, image/
+    tasks/         # one subpackage per modality: tabular/ + second modality (image or text, open)
     reporting/     # end-of-training report, exports, plots
   configs/         # run configs (YAML)
   tests/
 frontend/          # Next.js web app (public site + internal area)
 deploy/            # docker-compose (PostgreSQL, Grafana; later gateway, coordinator, Caddy)
-diagrams/          # architecture, sequence, state-machine, flowcharts, deployment
+diagrams/          # PlantUML sources + rendered PNG/SVG (architecture, sequence, state machine, deployment)
+planning/          # scope, requirements and open decisions
+.github/           # CI workflow, issue and PR templates
 documents/         # project description and proposal
 data/              # local datasets (gitignored)
 ```
