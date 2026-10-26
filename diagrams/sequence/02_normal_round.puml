@@ -1,0 +1,55 @@
+@startuml Sequence_Normal_Round
+autonumber
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor Client as "Client Node"
+participant Gateway as "FastAPI Gateway"
+participant Coordinator as "Coordinator State Machine"
+folder Storage as "File Storage (.safetensors)"
+database DB as "PostgreSQL"
+
+== Task Polling & Model Download ==
+loop Task Polling
+    Client -> Gateway : GET /task (client_id)
+    Gateway -> Coordinator : Get Current Round State
+    Coordinator --> Gateway : Round State (OPEN, round_id=t, deadline, config)
+    Gateway --> Client : TaskAssignment (round_id=t, deadline, hyperparams)
+end
+
+Client -> Gateway : GET /model/{run_id}/{version=t}
+Gateway -> Storage : Fetch global_model_v{t}.safetensors
+Storage --> Gateway : Model file bytes + Checksum
+Gateway --> Client : Stream model weights + SHA-256
+Client -> Client : Verify SHA-256 integrity
+
+== Local Training ==
+Note over Client
+  Train PyTorch model locally:
+  - Local dataset partition
+  - Local epochs (E) & learning rate (eta)
+  - Compute FedAvg weights or FedProx proximal loss
+  - Record pre/post training metrics (loss, F1)
+  - Compute update delta & SHA-256
+End Note
+
+== Update Upload ==
+Client -> Gateway : POST /update (run_id, round_id, update_id, num_samples, weights, sha256)
+Gateway -> DB : Check idempotency & stale status (UNIQUE run_id, round_id, client_id)
+alt Duplicate or Stale Update
+    Gateway --> Client : 409 Conflict / 400 Bad Request
+else Valid Update
+    Gateway -> Storage : Save client_{client_id}_v{t}.safetensors
+    Gateway -> DB : Insert update record, metrics, bytes_transferred
+    Gateway --> Client : 200 OK (UpdateAck accepted=true)
+end
+
+== Round Aggregation ==
+Coordinator -> Coordinator : Check Quorum (min_participants reached OR timeout)
+Coordinator -> Coordinator : Transition State: AGGREGATING
+Coordinator -> Storage : Read all accepted client updates for round t
+Coordinator -> Coordinator : Execute FedAvg / FedProx Aggregation
+Coordinator -> Storage : Save new global_model_v{t+1}.safetensors
+Coordinator -> DB : Commit round summary, duration, ML metrics (loss, accuracy, F1)
+Coordinator -> Coordinator : Advance to round t + 1 (State: OPEN)
+@enduml

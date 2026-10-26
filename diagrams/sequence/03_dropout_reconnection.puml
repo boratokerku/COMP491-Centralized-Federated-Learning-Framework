@@ -1,0 +1,43 @@
+@startuml Sequence_Dropout_Reconnection
+autonumber
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor Client1 as "Client 1 (Healthy)"
+actor Client2 as "Client 2 (Drops out / Reconnects)"
+participant Gateway as "FastAPI Gateway"
+participant Coordinator as "Coordinator State Machine"
+database DB as "PostgreSQL"
+
+== Round t: Client 2 Drops Out ==
+Coordinator -> Coordinator : Round t State = OPEN / COLLECTING
+Client1 -> Gateway : POST /update (Round t update)
+Gateway -> DB : Save update from Client 1
+
+Note over Client2 : Client 2 experiences network failure / crashes\n(No update received)
+
+Coordinator -> Coordinator : Round t Deadline Reached (Timeout)
+Coordinator -> DB : Query received updates count
+alt Count >= min_participants (Quorum Met without Client 2)
+    Coordinator -> DB : Mark Client 2 as "DROPOUT" for Round t
+    Coordinator -> Coordinator : Aggregate with Client 1 updates only
+    Coordinator -> DB : Complete Round t successfully
+    Coordinator -> Coordinator : Open Round t + 1
+else Count < min_participants (Quorum Failed)
+    Coordinator -> DB : Mark Round t as FAILED (Quorum not met)
+    Coordinator -> Coordinator : Retry Round t
+end
+
+== Round t+1: Client 2 Reconnects ==
+Client2 -> Client2 : Network restored / Client restarts
+Client2 -> Gateway : GET /task (client_id=Client2)
+Gateway -> Coordinator : Query current round
+Coordinator --> Gateway : Active Round is t + 1
+Gateway --> Client2 : TaskAssignment (round_id=t+1, new global model version)
+
+Client2 -> Gateway : GET /model/{run_id}/{version=t+1}
+Gateway --> Client2 : Model weights v_{t+1}
+Note over Client2 : Client 2 synchronizes to newest model\nand resumes regular training
+Client2 -> Gateway : POST /update (Round t+1 update)
+Gateway --> Client2 : 200 OK (Accepted)
+@enduml

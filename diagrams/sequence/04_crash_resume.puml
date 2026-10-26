@@ -1,0 +1,38 @@
+@startuml Sequence_Coordinator_Crash_Resume
+autonumber
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+participant Coordinator as "Coordinator State Machine"
+database DB as "PostgreSQL"
+folder Storage as "File Storage"
+actor Admin as "System / Administrator"
+
+== Regular Execution with State Persistence ==
+Note over Coordinator, DB
+  Coordinator saves state after EVERY transition:
+  - run_id, active_round_id, status (COLLECTING/AGGREGATING)
+  - latest global model version and path
+end note
+Coordinator -> DB : UPDATE rounds SET status='AGGREGATING' WHERE round_id=5
+Coordinator -> Storage : Write global_model_v6.safetensors
+Coordinator -> DB : UPDATE rounds SET status='COMPLETED' WHERE round_id=5
+Coordinator -> DB : UPDATE runs SET current_round=6 WHERE run_id='run-101'
+
+== Unexpected Crash ==
+Note over Coordinator : [CRASH: Power failure / Process killed / OOM]
+
+== Recovery & Resume ==
+Admin -> Coordinator : Start Coordinator process (Restart / systemd)
+Coordinator -> DB : SELECT * FROM runs WHERE status='IN_PROGRESS'
+DB --> Coordinator : run_id='run-101', current_round=6
+Coordinator -> DB : SELECT * FROM rounds WHERE run_id='run-101' ORDER BY round_id DESC LIMIT 1
+DB --> Coordinator : round_id=5 (status='COMPLETED'), model_version=6
+
+Coordinator -> Storage : Verify global_model_v6.safetensors exists & checksum matches
+Storage --> Coordinator : File Verified OK
+
+Coordinator -> DB : Log Event: "COORDINATOR_RESUMED" (resuming from round 6)
+Coordinator -> Coordinator : Initialize Round 6 (State: OPEN)
+Note over Coordinator : Round 6 begins seamlessly.\nClients polling /task now receive round 6 without starting from round 0!
+@enduml

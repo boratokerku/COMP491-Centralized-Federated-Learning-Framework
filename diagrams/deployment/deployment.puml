@@ -1,0 +1,56 @@
+@startuml Deployment_Diagram
+skinparam node {
+    BorderColor #2C3E50
+    BackgroundColor #F8F9F9
+}
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+title Centralized Federated Learning - Deployment Topology
+
+node "Central Server (Cloud VM / University Cluster)" as ServerNode {
+    artifact "Caddy Web Server\n(Port 443 HTTPS / TLS)" as CaddyComp
+    
+    node "Docker / Container Runtime" {
+        component "FastAPI Gateway Container\n(Uvicorn ASGI)" as GWComp
+        component "Coordinator Engine\n(State Machine Service)" as CoordComp
+        component "Next.js Web Portal Container\n(Port 3000)" as WebComp
+        database "PostgreSQL 16 Container\n(Port 5432)" as DBComp
+    }
+    
+    storage "Host Volume: /data/models/\n(.safetensors weights & ONNX)" as StorageComp
+    
+    CaddyComp --> GWComp : Reverse Proxy
+    CaddyComp --> WebComp : Reverse Proxy
+    GWComp --> DBComp : TCP Connection
+    CoordComp --> DBComp : TCP Connection
+    GWComp --> StorageComp : File I/O
+    CoordComp --> StorageComp : File I/O
+}
+
+cloud "Public Internet / Campus WAN (TLS Encrypted)" as Internet
+
+node "Client Machine 1 (Partner Organization A)" as NodeA {
+    artifact "Client Agent Process / Docker\n(PyTorch + Conformance Checker)" as AgentA
+    database "Bank Data Partition A\n(CSV / Parquet)" as DataA
+    AgentA ..> DataA : Private Access
+}
+
+node "Client Machine 2 (Partner Organization B)" as NodeB {
+    artifact "Client Agent Process / Docker\n(PyTorch + Conformance Checker)" as AgentB
+    database "Bank Data Partition B\n(CSV / Parquet)" as DataB
+    AgentB ..> DataB : Private Access
+}
+
+node "Client Machine 3 (Team Member Laptop)" as NodeC {
+    artifact "Client Agent Process\n(Simulated Straggler / Dropout)" as AgentC
+    database "Bank Data Partition C" as DataC
+    AgentC ..> DataC : Private Access
+}
+
+AgentA --> Internet : HTTPS (Port 443)
+AgentB --> Internet : HTTPS (Port 443)
+AgentC --> Internet : HTTPS (Port 443)
+Internet --> CaddyComp : Ingress Traffic
+
+@enduml

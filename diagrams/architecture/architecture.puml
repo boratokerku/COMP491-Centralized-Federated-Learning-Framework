@@ -1,0 +1,124 @@
+@startuml Architecture_Diagram
+skinparam defaultFontName Arial
+skinparam fontSize 11
+skinparam roundcorner 8
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam nodesep 60
+skinparam ranksep 50
+
+' Theme Colors
+skinparam package {
+    BorderColor #34495E
+    BackgroundColor #F8F9FA
+    FontColor #2C3E50
+    FontStyle bold
+}
+
+skinparam node {
+    BorderColor #2C3E50
+    BackgroundColor #FFFFFF
+    FontColor #1A252F
+    FontStyle bold
+}
+
+skinparam component {
+    BorderColor #2980B9
+    BackgroundColor #EBF5FB
+    FontColor #1B4F72
+}
+
+skinparam database {
+    BorderColor #27AE60
+    BackgroundColor #E8F8F5
+    FontColor #145A32
+}
+
+skinparam storage {
+    BorderColor #D35400
+    BackgroundColor #FBEEE6
+    FontColor #6E2C00
+}
+
+title Centralized Federated Learning Framework - System Architecture
+
+' ==============================================================================
+' 1. CLIENT SILOS
+' ==============================================================================
+package "Participating Organizations (Cross-Silo Clients)" as ClientsBlock {
+
+    node "Client A (Managed-Code Mode)" as NodeClientA {
+        [Docker: cfl-client\n-- Client Engine --\n• Task Poller & State Tracker\n• Conformance Self-Checker\n• PyTorch Trainer (FedAvg / FedProx)\n• Serializer (.safetensors + SHA-256)\n• Transport Client (HTTPSTransport)\n• Final Model ONNX Verifier] as ClientA_Comp
+        database "Confidential Data A\n(Never Shared)" as DataA
+        ClientA_Comp .left.> DataA : Private Read
+    }
+
+    node "Client B (Independent Mode)" as NodeClientB {
+        [Custom Client App\n-- Partner Engine --\n• Implements Conformance Contract\n• Python & PyTorch Environment\n• HTTPS REST with Bearer Token] as ClientB_Comp
+        database "Confidential Data B\n(Never Shared)" as DataB
+        ClientB_Comp .left.> DataB : Private Read
+    }
+
+    node "Client C (Testing Node)" as NodeClientC {
+        [Simulated Edge Client\n-- Injected Faults --\n• Network Straggler / Slow Client\n• Sudden Mid-Round Dropout\n• Stale or Duplicate Updates] as ClientC_Comp
+    }
+}
+
+' ==============================================================================
+' 2. NETWORK INGRESS
+' ==============================================================================
+cloud "Public Internet / Campus WAN\n[TLS 1.3 / HTTPS (Port 443)]" as Internet
+
+ClientA_Comp -down-> Internet : HTTPS (Port 443)
+ClientB_Comp -down-> Internet : HTTPS (Port 443)
+ClientC_Comp -down-> Internet : HTTPS (Port 443)
+
+' ==============================================================================
+' 3. CENTRAL COORDINATOR SERVER
+' ==============================================================================
+node "Central Server (Cloud VM / University Cluster Host)" as CentralServer {
+
+    package "Edge Ingress" as IngressPkg {
+        [Docker: cfl-caddy\n-- Reverse Proxy --\n• Auto TLS 1.3 (Let's Encrypt / CA)\n• Ingress: /api/* -> Gateway | /* -> WebApp\n• Security Headers & SSL Termination] as Caddy
+    }
+
+    Internet -down-> Caddy : Port 443 / 80
+
+    package "Core Backend Services (Docker Compose)" as BackendStack {
+        [Docker: cfl-gateway\n-- FastAPI REST Ingress --\n• Endpoints (/register, /task, /model, /update)\n• Bearer Token Authentication & Whitelist\n• Idempotency & Stale Check (update_id)\n• Payload SHA-256 Checksum Validation] as Gateway
+
+        [Docker: cfl-coordinator\n-- Orchestration Engine --\n• Round State Machine (OPEN/COLL/AGG/DONE)\n• Quorum & Timeout Manager (Deadlines)\n• Strategy Engine (FedAvg & FedProx)\n• State Persistence & Crash Recovery\n• Model Artifact & ONNX Exporter\n• Automated Report & Plot Generator] as Coordinator
+
+        Gateway <..> Coordinator : Round Events & Triggers
+    }
+
+    Caddy -down-> Gateway : Proxy /api/* (:8000)
+
+    package "Data & Storage Layer" as StorageLayer {
+        storage "Host Volume: /data/models/\n-- Model Weight Files --\n• global_model_v(t).safetensors\n• client_updates_v(t).safetensors\n• final_model.onnx + .sha256" as VolModels
+
+        database "Docker: cfl-postgres\n-- PostgreSQL 16 Database --\n• runs (run_id, status, config)\n• rounds (round_id, status, deadline)\n• clients & conformance_reports\n• updates & system events" as Postgres
+
+        storage "Host Volume: /data/reports/\n-- Run Summary Artifacts --\n• experiment_summary.md\n• metrics_history.json / .csv\n• convergence_plots.png" as VolReports
+    }
+
+    Gateway -down-> VolModels : Store Weights
+    Gateway -down-> Postgres : Save Updates
+    Coordinator -down-> Postgres : Persist State
+    Coordinator -down-> VolModels : Save Global Model
+    Coordinator -down-> VolReports : Export Reports
+
+    package "Observability & Presentation" as UIStack {
+        [Docker: cfl-frontend\n-- Next.js Web Portal (React) --\n• Public: Project Info, Team, Video, Poster\n• Private: Live Round Monitor, Inbox, Logs] as NextApp
+
+        [Docker: cfl-grafana\n-- Grafana Dashboard Server --\n• Round Latencies & Compute vs Wait\n• Real-Time Loss / Accuracy Curves\n• Transferred Bytes & Dropout Rates] as Grafana
+    }
+
+    Caddy -down-> NextApp : Proxy /* (:3000)
+    Postgres -down-> NextApp : Query Runs & Logs
+    Postgres -down-> Grafana : Telemetry Stream
+    VolReports -down-> NextApp : Serve Reports
+    VolModels -down-> NextApp : Serve Checksums
+}
+
+@enduml

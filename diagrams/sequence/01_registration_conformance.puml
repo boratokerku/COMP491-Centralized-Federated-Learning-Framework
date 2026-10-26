@@ -1,0 +1,38 @@
+@startuml Sequence_Registration_Conformance
+autonumber
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor Client as "Client Node"
+participant Gateway as "FastAPI Gateway"
+participant Conformance as "Conformance Validator"
+database DB as "PostgreSQL"
+
+Client -> Gateway : POST /register (client_id, manifest_version, auth_token)
+Gateway -> DB : Verify client auth token & approved list
+
+alt Token Invalid or Unapproved Client
+    Gateway --> Client : 401 Unauthorized / 403 Forbidden
+else Token Valid
+    Client -> Gateway : POST /conformance/verify (manifest_version, local_test_report)
+    Gateway -> Conformance : Evaluate Conformance Report
+    note over Conformance
+      Checks:
+      1. Model parameter & tensor shapes
+      2. Feature names, ordering, and data types
+      3. Preprocessing & categorical encoding version
+      4. Feature units & label ranges
+      5. Output on reference synthetic test inputs
+    end note
+    
+    alt Validation Failed (Mismatch detected)
+        Conformance --> Gateway : Fail (Reason: e.g. "feature_order_mismatch")
+        Gateway -> DB : Log rejection reason in conformance_reports
+        Gateway --> Client : 422 Unprocessable Entity (Rejection Details)
+    else Validation Passed
+        Conformance --> Gateway : Success
+        Gateway -> DB : Save client status as "REGISTERED & CONFORMANT"
+        Gateway --> Client : 200 OK (Registration Accepted, Session Token)
+    end
+end
+@enduml

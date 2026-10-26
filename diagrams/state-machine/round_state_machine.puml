@@ -1,0 +1,59 @@
+@startuml Round_State_Machine
+skinparam state {
+    BorderColor #2C3E50
+    BackgroundColor #ECF0F1
+    ArrowColor #2980B9
+}
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+title Federated Learning - Round State Machine
+
+[*] --> INIT : Initialize Experiment
+
+INIT --> OPEN : Start New Round (round_id = t)
+note right of OPEN
+  - Publish global model v_t to Storage
+  - Broadcast task config via /task
+  - Set round deadline timer
+end note
+
+OPEN --> COLLECTING : First Valid Client Update Received
+note right of COLLECTING
+  - Accept updates via POST /update
+  - Check idempotency (update_id)
+  - Verify SHA-256 and client token
+  - Reject duplicate / stale updates
+end note
+
+COLLECTING --> AGGREGATING : Quorum Met (count >= min_participants)\nOR (Timeout AND count >= min_participants)
+note right of AGGREGATING
+  - Lock round updates
+  - Compute weighted FedAvg / FedProx
+  - Evaluate new global model v_{t+1}
+  - Persist round metrics to PostgreSQL
+end note
+
+COLLECTING --> FAILED : Timeout AND count < min_participants
+note left of FAILED
+  - Quorum not satisfied
+  - Log failure reason in PostgreSQL
+  - Trigger retry round or abort
+end note
+
+FAILED --> OPEN : Retry Round (Same or incremented round)
+FAILED --> [*] : Max Round Retries Exceeded
+
+AGGREGATING --> OPEN : Round Successful & round_id < max_rounds
+note top of OPEN : round_id = t + 1
+
+AGGREGATING --> DONE : Round Successful & round_id == max_rounds
+note right of DONE
+  - Export final model artifact (ONNX / safetensors)
+  - Generate Markdown & JSON/CSV reports
+  - Notify clients via GET /model/final
+end note
+
+DONE --> [*] : Experiment Complete
+
+@enduml
