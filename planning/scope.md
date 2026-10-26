@@ -143,7 +143,7 @@ Byzantine-robust aggregation, secure aggregation, homomorphic encryption, split 
 
 ## 4. Web Application Specification & Page Architecture
 
-The web application is built with **Next.js (React)**. It has a public project site and an authenticated internal area. The internal area reads data through read-only gateway API endpoints, not directly from PostgreSQL. Grafana reads round metrics directly from PostgreSQL.
+The web application is built with **Next.js (React)**. It has a public project site and an authenticated internal area. The internal area reads data through read-only gateway API endpoints, not directly from PostgreSQL. Grafana reads metrics directly from PostgreSQL and is the main tool for time-series metric charts; the web application displays the information Grafana cannot present well (run and round state, client and conformance details, update records, events, reports).
 
 ```
                            +------------------------+
@@ -184,8 +184,7 @@ Online from week 4 (M6.1) and updated weekly until the end of the semester.
 ### 4.3. Optional Web Extras
 
 - Control actions (Start Run, Abort): require write endpoints with separate admin authorization.
-- Interactive charts (Recharts/Chart.js) in place of the generated static plots.
-- Embedded Grafana panels.
+- Grafana metric panels embedded in the web application as iframes.
 
 ---
 
@@ -216,3 +215,125 @@ Design-first, incremental layers, aligned with the proposal's work packages and 
 - [x] Every mandatory requirement and deliverable of the Capstone Project Description is mapped to a section of this document.
 - [ ] Reviewed by the team.
 - [ ] Reviewed by the advisors.
+
+---
+
+## 7. Architecture, Tech Stack & Workflow Decisions
+
+Implementation decisions behind the requirements above. Open decisions are closed by the team during WP1 (weeks 1–2).  
+**How to use:** For each open item, discuss the options, write the chosen option in **Decision**, set **Status** to `Decided` with the date, and add a one-line reason. If a decision changes later, do not delete it: mark it `Superseded` and add the new one.
+
+`Recommendation` is a starting point for discussion, not a decision.
+
+---
+
+### 7.0 Already decided
+
+| ID | Topic | Decision | Source |
+| :--- | :--- | :--- | :--- |
+| D0.1 | ML framework | PyTorch | Proposal |
+| D0.2 | Algorithms | FedAvg and FedProx | Capstone description, proposal |
+| D0.3 | Gateway framework | FastAPI | Proposal |
+| D0.4 | Database | PostgreSQL | Proposal |
+| D0.5 | Web application | Next.js | Proposal |
+| D0.6 | Metrics dashboards | Grafana reading from PostgreSQL | Proposal |
+| D0.7 | Data modalities | Tabular (mandatory) + one of image or text | Advisors, Oct 2026 |
+| D0.8 | Grafana in web app | Optional: Grafana panels embedded as iframes; the web app shows what Grafana cannot present well | Team, 26 Oct 2026 |
+| D0.9 | Transport | Client-initiated HTTPS; clients always open the connection | Proposal |
+| D0.10 | Task tracking | Every task, coding and non-coding (research, meetings, docs, data, slides), is a GitHub Issue with title, short description, acceptance criteria / checklist and assignee(s); labels and milestone optional | Course (GitHub Issues guide) |
+| D0.11 | Development flow | Issue → branch for that issue → commits → PR → review → merge → issue closes | Course |
+| D0.12 | Commit messages | Conventional Commits: `type(scope): description` (feat, fix, docs, refactor, test, chore) | Course |
+| D0.13 | PR ↔ issue link | Every PR references its issue with a closing keyword (`Closes #ID`) | Course |
+| D0.14 | Evaluation of contributions | Instructors review issues, PRs, commits and review comments, so each member's work must be visible in GitHub history | Course |
+
+---
+
+### 7.1 Architecture — decide this week
+
+These block the API spec, DB schema and diagrams (D1.2, D1.3).
+
+| ID | Decision needed | Options | Recommendation | Decision | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| A1 | Where does the coordinator + gateway run, and how do clients reach it over the Internet? | (a) University server with a public address (b) University server via VPN (c) Cloud VM with a public IP (d) A team member's machine with port forwarding | Ask IT about (a) this week; keep (c) as fallback. Needed for the mid-demo (M4.4). | | Open |
+| A2 | How do the gateway and coordinator interact? | (a) Separate processes sharing PostgreSQL + file storage (b) One process (coordinator runs inside the gateway) (c) Separate processes with direct calls | (a): PostgreSQL is the single source of truth, so a restarted coordinator resumes by reading it. | Separate processes sharing PostgreSQL + file storage | Decided |
+| A3 | Where is coordinator state kept in simulation mode? | (a) PostgreSQL as in distributed mode (b) SQLite (c) In-memory store behind the same interface | (b) or (c) behind a storage interface, so tests and CI do not need PostgreSQL. | In-memory store behind a storage interface | Decided |
+| A4 | Where is the global model evaluated? | (a) Server-side held-out test set (b) Federated evaluation: clients evaluate the global model on their local test split and report metrics (c) Both | (c): (a) for experiments and baselines, (b) for per-client metrics required by the description. | Both: server-side test set + federated evaluation | Decided |
+| A5 | API style | (a) REST + JSON metadata, binary weights (b) gRPC | (a): simpler to debug; model sizes are small. | REST | Decided |
+| A6 | How do clients get tasks? | (a) Short polling (b) Long polling (c) WebSocket/SSE | (a), with a configurable interval; (b) only if latency becomes a problem. | Short polling, configurable interval | Decided |
+| A7 | Weight serialization | (a) safetensors (b) `torch.save` (pickle) (c) NumPy `.npz` | (a): pickle from untrusted clients allows code execution. | safetensors | Decided |
+| A8 | Integrity check | (a) SHA-256 checksum (b) None | (a) | SHA-256 | Decided |
+| A9 | Weight storage | (a) Local file system, path in DB (b) Object store (MinIO/S3) (c) Inside PostgreSQL | (a) | Local file system, path in DB | Decided |
+| A10 | Duplicate / stale update rule | `update_id` format (UUIDv4?), `UNIQUE(run_id, round_id, client_id)`, reject updates for a closed round or old model version | Both `update_id` and the UNIQUE constraint; retries reuse the same `update_id`. | UUIDv4 `update_id` + `UNIQUE(run_id, round_id, client_id)` | Decided |
+| A11 | Round deadline rule | At the deadline: aggregate if received ≥ minimum, else `FAILED` | As written; late updates after the deadline are rejected as stale. | Aggregate if received ≥ minimum, else FAILED; late updates rejected | Decided |
+| A12 | Client selection per round | (a) Random subset with seed (b) All available clients (c) Round-robin | (a), configurable fraction; (b) as a special case. | Seeded random subset (configurable fraction) | Decided |
+| A13 | Retry policy | Max attempts, backoff (fixed / exponential), jitter | Exponential backoff with jitter, max attempts in config. | Exponential backoff + jitter, max attempts in config | Decided |
+| A14 | Latency measurement | (a) RTT and durations measured on one side (b) One-way latency (needs clock sync) | (a): machine clocks are not synchronized. | RTT and one-sided durations | Decided |
+
+### 7.2 Security
+
+| ID | Decision needed | Options | Recommendation | Decision | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| S1 | TLS termination | (a) Caddy reverse proxy (b) nginx (c) Uvicorn with certificates directly | (a): automatic certificates, short config. | Caddy | Decided |
+| S2 | Certificates | (a) Let's Encrypt on a hostname (free: `sslip.io`, a `ku.edu.tr` subdomain, or a Student Pack `.tech`/`.me` domain); nothing to distribute, needs a public IP (b) Own CA via Caddy `tls internal`; works without a public IP, clients get our root certificate | Depends on A1: public IP → (a), otherwise (b). | To be determined (after A1) | Open |
+| S3 | Client authentication | (a) Per-client token issued at admin approval (b) Mutual TLS (c) Shared API key | (a); tokens stored hashed. (b) only if time permits. | Per-client token, stored hashed | Decided |
+| S4 | Client approval flow | How an admin adds a client to the approved list (CLI, admin endpoint, DB seed) | Admin CLI command. | Admin CLI command | Decided |
+
+### 7.3 Data & database
+
+| ID | Decision needed | Options | Recommendation | Decision | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| B1 | Tabular dataset | (a) Banking dataset from the advisors (b) UCI Bank Marketing (c) UCI Default of Credit Card Clients | (a) if it arrives with a clear license; start development on (b). | | Open |
+| B2 | Second modality | (a) Image: MedMNIST (b) Text: UCI SMS Spam | (a): easy download, trains on CPU, no shared-vocabulary problem. Deadline: WP7 (T7.1). | Image (MedMNIST) | Decided |
+| B3 | Image dataset (if B2 = image) | DermaMNIST, BloodMNIST, PathMNIST (avoid ChestMNIST: multi-label) | BloodMNIST or DermaMNIST, 28×28. | BloodMNIST | Decided |
+| B4 | DB access layer | (a) SQLAlchemy 2.0 + Alembic migrations (b) psycopg with raw SQL | (a): schema in one place, migrations for a 4-person team. | SQLAlchemy 2.0 + Alembic | Decided |
+| B5 | PostgreSQL version | 15 / 16 / 17 | 16 | 16 | Decided |
+| B6 | Run configuration | (a) YAML + Pydantic validation (b) Hydra (c) JSON | (a) | YAML + Pydantic | Decided |
+
+### 7.4 Client compatibility
+
+| ID | Decision needed | Options | Recommendation | Decision | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| C1 | Managed-code distribution | (a) Docker image in a private registry (GHCR) (b) Docker image as `docker save` tarball (c) Python wheel / release bundle | (a), with (b) for clients without registry access. Version = image tag + digest. | Docker image in private GHCR + `docker save` tarball | Decided |
+| C2 | Manifest format | (a) JSON (b) YAML | (a), validated with a Pydantic model / JSON Schema. | JSON | Decided |
+| C3 | Where conformance checks run | (a) Client runs the checker locally and submits a report (b) Server sends reference inputs, client returns outputs, server compares (c) Both | (b) for reference test cases (the client cannot fake the comparison), (a) for metadata checks. | Metadata: client report; reference tests: server-side comparison | Decided |
+| C4 | Independent-client demonstration | How we show a non-managed client | A separately written minimal client (not using our package); one conforming and several mismatching variants (T5.5). | Separately written minimal client, conforming + mismatching variants | Decided |
+
+### 7.5 Web application & observability
+
+| ID | Decision needed | Options | Recommendation | Decision | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| W1 | Internal area login | (a) Single admin account (b) NextAuth with team accounts (c) Gateway-issued token | (a) or (c); the users are only the team. | Single admin account | Decided |
+| W2 | Live updates | (a) Polling every few seconds (b) Server-Sent Events (c) WebSocket | (a) | Polling | Decided |
+| W3 | Hosting | (a) Whole Next.js app next to the gateway (b) Public site on Vercel, internal area next to the gateway | (a) is simpler; (b) if the public site must stay up independently. | Whole Next.js app next to the gateway | Decided |
+| W4 | Public results page data | (a) Updated manually from reports (b) Pulled automatically from reports | (a) | Updated manually | Decided |
+| W5 | Grafana embedding access (if done) | (a) Auth proxy behind the same reverse proxy (b) Anonymous read-only, internal network only | (a) if exposed to the Internet; never anonymous on the Internet. | Auth proxy | Decided |
+| W6 | Dashboards as code | (a) Grafana provisioning, JSON in `deploy/grafana/` (b) Created manually in the UI | (a) | Grafana provisioning, JSON in repo | Decided |
+| W7 | Event/metric logging | (a) Events and metrics tables in PostgreSQL (b) Additional Prometheus | (a) | PostgreSQL tables | Decided |
+
+### 7.6 Development workflow
+
+| ID | Decision needed | Options | Recommendation | Decision | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| F1 | Branch protection | Protect `main` (no direct pushes, PR required, CI must pass)? | Yes. The branch-per-issue flow itself is decided (D0.11). | Protect `main`: PR + passing CI required | Decided |
+| F2 | Code review | Number of approvals before merge | 1 approval from another member. | 1 approval | Decided |
+| F3 | Merge strategy | Squash / merge commit / rebase | Merge commit: keeps each member's individual commits visible, which the course reviews (D0.14). | Merge commit | Decided |
+| F4 | Branch naming | e.g. `12-fedprox` (GitHub's "Create a branch" from the issue) or `feat/12-fedprox` | Create the branch from the issue page on GitHub, so it starts with the issue number. Commit format is decided (D0.12). | Branch created from the issue page | Decided |
+| F5 | Labels, milestones and board | Label set (type, WP, priority), one milestone per WP, GitHub Projects board columns | Labels `type:*` and `wp1`–`wp9`; milestones = WPs; board columns Todo / In progress / In review / Done. Issues themselves are decided (D0.10). | Labels `type:*` + `wp1`–`wp9`; milestones = WPs; board Todo / In progress / In review / Done | Decided |
+| F6 | Python version and environment | Python 3.11 / 3.12 / 3.13; pip + venv / uv | 3.11+ (CI on 3.11); pip + venv documented, uv optional. | Python 3.11+, pip + venv (uv optional) | Decided |
+| F7 | Code quality | Linter/formatter, type hints, tests required in PRs | ruff (lint + format), type hints on public functions, tests with each feature. | ruff lint + format, type hints on public functions, tests with each feature | Decided |
+| F8 | Protocol and DB changes | Rules for changing shared contracts | Changes to `protocol/` bump the protocol version and need review from both gateway and client owners; DB changes only via migrations. | Protocol changes bump version + 2-owner review; DB changes via migrations only | Decided |
+| F9 | Diagram tool | PlantUML (`.puml` sources + exported PNG/SVG in `diagrams/`) | Already in use; keep the `.puml` source next to every exported image. | PlantUML | Decided |
+| F10 | Meetings | Weekly team meeting day/time, advisor meeting cadence, communication channel | | | Open |
+| F11 | Definition of done | When a task counts as finished | Acceptance criteria in the issue met; PR with `Closes #ID` reviewed and merged; CI green; tests added for code; docs updated if behavior changed. | As recommended | Decided |
+
+---
+
+### 7.7 Decision log
+
+Record closed decisions here in date order.
+
+| Date | ID | Decision | Reason |
+| :--- | :--- | :--- | :--- |
+| 26 Oct 2026 | D0.8 | Grafana iframe embedding is optional; web app shows non-chart information | Team discussion |
+| 26 Oct 2026 | A2–A14, S1, S3–S4, B2–B6, C1–C4, W1–W7, F1–F8, F11 | Recommendations accepted as written | Team decision |
+| 26 Oct 2026 | F9 | PlantUML | Already in use for the WP1 diagrams |

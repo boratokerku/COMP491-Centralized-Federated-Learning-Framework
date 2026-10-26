@@ -50,6 +50,18 @@ cp deploy/.env.example deploy/.env   # then set the passwords
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
+## Workflow
+
+1. Open an issue for every task, including non-coding work (research, meetings, documentation,
+   data, slides). Use the **Task** template: description, acceptance criteria, assignee.
+2. Create a branch for the issue (from the issue page: *Development → Create a branch*).
+3. Commit with [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+   `feat(gateway): add update upload endpoint`, `docs(readme): ...`, `fix(...)`, `test(...)`.
+4. Open a PR that references the issue (`Closes #ID`); another member reviews it.
+5. Merge after review and green CI; the issue closes automatically.
+
+Scope and team decisions are in [planning/scope.md](planning/scope.md) (decisions: section 7).
+
 ## Conventions
 
 - Model weights are exchanged as `safetensors` with a SHA-256 checksum. Never unpickle data
