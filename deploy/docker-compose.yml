@@ -1,0 +1,28 @@
+# Server-side services for local development.
+# Gateway, coordinator and Caddy (TLS) will be added here as they are implemented.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cfl}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-cfl}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in deploy/.env}
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana:/var/lib/grafana
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:
+  grafana:

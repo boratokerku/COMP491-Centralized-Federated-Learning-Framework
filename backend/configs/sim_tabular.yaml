@@ -1,0 +1,26 @@
+# Example run config for local simulation on the tabular dataset (draft).
+run:
+  name: sim-tabular-fedavg
+  seed: 42
+  mode: simulation          # simulation | distributed
+
+task:
+  name: tabular
+  data_dir: ../data/tabular   # raw data is never committed
+  num_clients: 4
+  partition: iid            # iid | label_skew | feature_skew
+
+strategy:
+  name: fedavg              # fedavg | fedprox
+  # mu: 0.01                # only for fedprox
+
+rounds:
+  num_rounds: 20
+  clients_per_round: 4
+  min_participants: 3
+  round_timeout_s: 120
+
+client:
+  local_epochs: 1
+  batch_size: 64
+  learning_rate: 0.001

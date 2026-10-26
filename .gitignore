@@ -1,0 +1,36 @@
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# Secrets
+.env
+*.env
+!*.env.example
+*.pem
+*.key
+certs/
+
+# Data and run outputs (raw data must never be committed)
+data/*
+!data/README.md
+runs/
+artifacts/
+*.safetensors
+*.onnx
