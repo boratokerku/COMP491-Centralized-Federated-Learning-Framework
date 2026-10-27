@@ -1,0 +1,171 @@
+@startuml CFL_Database_ER_Diagram
+hide circle
+skinparam linetype ortho
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam entity {
+  BackgroundColor #F8FBFF
+  BorderColor #2C3E50
+  FontColor #17202A
+  ArrowColor #34495E
+}
+skinparam note {
+  BackgroundColor #FFF8E7
+  BorderColor #B7950B
+}
+title Centralized Federated Learning Framework — PostgreSQL ER Diagram
+
+entity "clients" as clients {
+  * client_id : TEXT <<PK>>
+  --
+  * token_hash : TEXT <<UQ>>
+  * status : TEXT
+  client_version : TEXT
+  protocol_version : TEXT
+  created_at : TIMESTAMPTZ
+  registered_at : TIMESTAMPTZ
+  last_seen_at : TIMESTAMPTZ
+}
+
+entity "runs" as runs {
+  * run_id : UUID <<PK>>
+  --
+  * name : TEXT
+  * status : TEXT
+  * strategy : TEXT
+  * task_name : TEXT
+  * seed : BIGINT
+  * config : JSONB
+  * protocol_version : TEXT
+  * model_version : INTEGER
+  model_path : TEXT
+  model_sha256 : CHAR(64)
+  * manifest_version : TEXT
+  * preprocessing_version : TEXT
+  * model_architecture : TEXT
+  * model_architecture_version : TEXT
+  started_at : TIMESTAMPTZ
+  completed_at : TIMESTAMPTZ
+  final_model_path : TEXT
+  final_model_sha256 : CHAR(64)
+  final_model_format : TEXT
+  final_model_bytes : BIGINT
+}
+
+entity "rounds" as rounds {
+  * run_id : UUID <<PK, FK>>
+  * round_id : INTEGER <<PK>>
+  --
+  * state : TEXT
+  * input_model_version : INTEGER
+  * input_model_path : TEXT
+  * input_model_sha256 : CHAR(64)
+  output_model_version : INTEGER
+  output_model_path : TEXT
+  output_model_sha256 : CHAR(64)
+  * min_participants : INTEGER
+  * deadline_at : TIMESTAMPTZ
+  * opened_at : TIMESTAMPTZ
+  closed_at : TIMESTAMPTZ
+  failure_reason : TEXT
+  * state_version : BIGINT
+}
+
+entity "round_participants" as participants {
+  * run_id : UUID <<PK, FK>>
+  * round_id : INTEGER <<PK, FK>>
+  * client_id : TEXT <<PK, FK>>
+  --
+  * status : TEXT
+  * selected_at : TIMESTAMPTZ
+  finished_at : TIMESTAMPTZ
+  reason_code : TEXT
+}
+
+entity "updates" as updates {
+  * update_id : UUID <<PK>>
+  --
+  * run_id : UUID <<FK>>
+  * round_id : INTEGER <<FK>>
+  * client_id : TEXT <<FK>>
+  * model_version : INTEGER
+  * num_samples : INTEGER
+  * weights_path : TEXT
+  * checksum_sha256 : CHAR(64)
+  * payload_bytes : BIGINT
+  * metrics : JSONB
+  * received_at : TIMESTAMPTZ
+  upload_duration_ms : DOUBLE PRECISION
+  ..
+  UQ (run_id, round_id, client_id)
+}
+
+entity "conformance_reports" as conformance {
+  * report_id : UUID <<PK>>
+  --
+  * client_id : TEXT <<FK>>
+  * manifest_version : TEXT
+  * client_version : TEXT
+  * protocol_version : TEXT
+  * status : TEXT
+  reason_code : TEXT
+  * report_payload : JSONB
+  * checked_at : TIMESTAMPTZ
+}
+
+entity "events" as events {
+  * event_id : BIGINT <<PK>>
+  --
+  run_id : UUID <<FK>>
+  round_id : INTEGER <<FK>>
+  client_id : TEXT <<FK>>
+  * event_type : TEXT
+  message_type : TEXT
+  status : TEXT
+  reason_code : TEXT
+  * occurred_at : TIMESTAMPTZ
+  duration_ms : DOUBLE PRECISION
+  message_bytes : BIGINT
+  details : JSONB
+}
+
+entity "metrics" as metrics {
+  * metric_id : BIGINT <<PK>>
+  --
+  * run_id : UUID <<FK>>
+  round_id : INTEGER <<FK>>
+  client_id : TEXT <<FK>>
+  * metric_name : TEXT
+  * value : DOUBLE PRECISION
+  * unit : TEXT
+  message_type : TEXT
+  dimensions : JSONB
+  * recorded_at : TIMESTAMPTZ
+}
+
+runs ||--o{ rounds : contains
+rounds ||--o{ participants : selects
+clients ||--o{ participants : may_join
+participants ||--o| updates : submits
+clients ||--o{ conformance : reports
+runs ||--o{ events : audits
+rounds ||--o{ events : audits
+clients ||--o{ events : causes
+runs ||--o{ metrics : measures
+rounds ||--o{ metrics : measures
+clients ||--o{ metrics : measures
+
+note right of updates
+  One accepted update per client per round:
+  UNIQUE (run_id, round_id, client_id)
+  update_id is the idempotency key.
+  Weight bytes live in file storage.
+end note
+
+note bottom of runs
+  Model path and SHA-256 are persisted before
+  state advances, allowing crash recovery.
+  Bearer tokens are stored only as hashes.
+end note
+@enduml

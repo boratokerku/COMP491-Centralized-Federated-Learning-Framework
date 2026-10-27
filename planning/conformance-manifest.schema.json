@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cfl:conformance-manifest:schema:1",
+  "title": "CFL Client Conformance Manifest",
+  "description": "Versioned contract for client model, input, preprocessing, label, and synthetic reference checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_version",
+    "dataset",
+    "model",
+    "preprocessing",
+    "input_schema",
+    "label",
+    "reference_tests",
+    "validation"
+  ],
+  "properties": {
+    "manifest_version": {"$ref": "#/$defs/version"},
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "dataset_version", "source_id"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "dataset_version": {"type": "string", "minLength": 1},
+        "source_id": {"type": "string", "minLength": 1},
+        "raw_label_column": {"type": "string", "minLength": 1}
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["architecture_id", "architecture_version", "task", "input_dim", "output_dim", "parameters"],
+      "properties": {
+        "architecture_id": {"type": "string", "minLength": 1},
+        "architecture_version": {"$ref": "#/$defs/version"},
+        "framework": {"type": "string", "minLength": 1},
+        "task": {"enum": ["binary_classification", "multiclass_classification", "regression"]},
+        "input_dim": {"type": "integer", "minimum": 1},
+        "output_dim": {"type": "integer", "minimum": 1},
+        "parameters": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "shape", "dtype"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "shape": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 1}},
+              "dtype": {"enum": ["float32", "float64"]}
+            }
+          }
+        }
+      }
+    },
+    "preprocessing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "implementation_id", "encoding", "scaling"],
+      "properties": {
+        "version": {"type": "string", "minLength": 1},
+        "implementation_id": {"type": "string", "minLength": 1},
+        "encoding": {"type": "string", "minLength": 1},
+        "scaling": {"type": "string", "minLength": 1},
+        "fit_policy": {"enum": ["fixed_manifest_statistics", "public_reference_statistics"]}
+      }
+    },
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["features", "model_input"],
+      "properties": {
+        "features": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"oneOf": [{"$ref": "#/$defs/numericFeature"}, {"$ref": "#/$defs/categoricalFeature"}]}
+        },
+        "model_input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["feature_names", "shape", "dtype"],
+          "properties": {
+            "feature_names": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+            "shape": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 1}},
+            "dtype": {"enum": ["float32", "float64"]}
+          }
+        }
+      }
+    },
+    "label": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "positive_value", "negative_value", "encoded_values", "meaning"],
+      "properties": {
+        "column": {"type": "string", "minLength": 1},
+        "positive_value": {"type": "string"},
+        "negative_value": {"type": "string"},
+        "encoded_values": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer"}},
+        "meaning": {"type": "string", "minLength": 1}
+      }
+    },
+    "reference_tests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["test_id", "synthetic_raw_input", "expected_model_input"],
+        "properties": {
+          "test_id": {"type": "string", "minLength": 1},
+          "synthetic_raw_input": {"type": "object", "minProperties": 1},
+          "expected_model_input": {"type": "array", "minItems": 1, "items": {"type": "number"}}
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_order", "reference_atol", "failure_codes"],
+      "properties": {
+        "check_order": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["protocol_version", "manifest_version", "model_version", "model_shape", "feature_schema", "feature_order", "units", "encoding", "preprocessing_version", "label_semantics", "label_range", "reference_outputs", "report_schema"]}
+        },
+        "reference_atol": {"type": "number", "minimum": 0},
+        "failure_codes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["protocol_version_mismatch", "manifest_version_mismatch", "model_version_mismatch", "model_shape_mismatch", "feature_schema_mismatch", "feature_order_mismatch", "unit_mismatch", "encoding_mismatch", "preprocessing_version_mismatch", "label_semantics_mismatch", "label_range_mismatch", "reference_output_mismatch", "invalid_report"]}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "numericFeature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "unit", "mean", "std"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "type": {"const": "numeric"},
+        "unit": {"type": "string", "minLength": 1},
+        "mean": {"type": "number"},
+        "std": {"type": "number", "exclusiveMinimum": 0},
+        "sentinel": {"type": "number"},
+        "sentinel_fill": {"type": "number"}
+      },
+      "dependentRequired": {"sentinel": ["sentinel_fill"], "sentinel_fill": ["sentinel"]}
+    },
+    "categoricalFeature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "categories"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "type": {"const": "categorical"},
+        "categories": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}
+      }
+    }
+  }
+}
