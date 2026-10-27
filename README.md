@@ -24,7 +24,7 @@ diagrams/          # PlantUML sources + rendered PNG/SVG (architecture, sequence
 planning/          # scope, requirements and open decisions
 .github/           # CI workflow, issue and PR templates
 documents/         # project description and proposal
-data/              # local datasets (gitignored)
+data/              # local datasets and partitions (gitignored)
 ```
 
 ## Getting started
