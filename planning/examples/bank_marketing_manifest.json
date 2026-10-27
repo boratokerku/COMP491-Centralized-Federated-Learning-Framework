@@ -1,0 +1,116 @@
+{
+  "manifest_version": "1.0.0",
+  "dataset": {
+    "name": "bank_marketing",
+    "dataset_version": "bank-additional-full-uci-222",
+    "source_id": "UCI ML Repository dataset 222; CC BY 4.0",
+    "raw_label_column": "y"
+  },
+  "model": {
+    "architecture_id": "bank_mlp",
+    "architecture_version": "1.0.0",
+    "framework": "pytorch",
+    "task": "binary_classification",
+    "input_dim": 65,
+    "output_dim": 2,
+    "parameters": [
+      {"name": "network.0.weight", "shape": [64, 65], "dtype": "float32"},
+      {"name": "network.0.bias", "shape": [64], "dtype": "float32"},
+      {"name": "network.2.weight", "shape": [2, 64], "dtype": "float32"},
+      {"name": "network.2.bias", "shape": [2], "dtype": "float32"}
+    ]
+  },
+  "preprocessing": {
+    "version": "1.0",
+    "implementation_id": "cfl.tasks.tabular.preprocessing.transform",
+    "encoding": "fixed-order one-hot; fixed category vocabularies from this manifest",
+    "scaling": "fixed mean/std; pdays sentinel replaced by mean and accompanied by an indicator",
+    "fit_policy": "public_reference_statistics"
+  },
+  "input_schema": {
+    "features": [
+      {"name": "age", "type": "numeric", "unit": "years", "mean": 40.0241, "std": 10.4211},
+      {"name": "campaign", "type": "numeric", "unit": "contacts", "mean": 2.56759, "std": 2.76998},
+      {"name": "pdays", "type": "numeric", "unit": "days", "mean": 6.01452, "std": 3.82364, "sentinel": 999, "sentinel_fill": 6.01452},
+      {"name": "previous", "type": "numeric", "unit": "contacts", "mean": 0.172963, "std": 0.494895},
+      {"name": "emp.var.rate", "type": "numeric", "unit": "percent (quarterly)", "mean": 0.0818855, "std": 1.57094},
+      {"name": "cons.price.idx", "type": "numeric", "unit": "index (monthly)", "mean": 93.5757, "std": 0.578833},
+      {"name": "cons.conf.idx", "type": "numeric", "unit": "index (monthly)", "mean": -40.5026, "std": 4.62814},
+      {"name": "euribor3m", "type": "numeric", "unit": "percent (daily)", "mean": 3.62129, "std": 1.73443},
+      {"name": "nr.employed", "type": "numeric", "unit": "thousands of employees (quarterly)", "mean": 5167.04, "std": 72.2507},
+      {"name": "job", "type": "categorical", "categories": ["admin.", "blue-collar", "entrepreneur", "housemaid", "management", "retired", "self-employed", "services", "student", "technician", "unemployed", "unknown"]},
+      {"name": "marital", "type": "categorical", "categories": ["divorced", "married", "single", "unknown"]},
+      {"name": "education", "type": "categorical", "categories": ["basic.4y", "basic.6y", "basic.9y", "high.school", "illiterate", "professional.course", "university.degree", "unknown"]},
+      {"name": "default", "type": "categorical", "categories": ["no", "yes", "unknown"]},
+      {"name": "housing", "type": "categorical", "categories": ["no", "yes", "unknown"]},
+      {"name": "loan", "type": "categorical", "categories": ["no", "yes", "unknown"]},
+      {"name": "contact", "type": "categorical", "categories": ["cellular", "telephone"]},
+      {"name": "month", "type": "categorical", "categories": ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]},
+      {"name": "day_of_week", "type": "categorical", "categories": ["mon", "tue", "wed", "thu", "fri"]},
+      {"name": "poutcome", "type": "categorical", "categories": ["failure", "nonexistent", "success"]}
+    ],
+    "model_input": {
+      "feature_names": [
+        "age", "campaign", "pdays", "pdays_is_sentinel", "previous", "emp.var.rate", "cons.price.idx", "cons.conf.idx", "euribor3m", "nr.employed",
+        "job=admin.", "job=blue-collar", "job=entrepreneur", "job=housemaid", "job=management", "job=retired", "job=self-employed", "job=services", "job=student", "job=technician", "job=unemployed", "job=unknown",
+        "marital=divorced", "marital=married", "marital=single", "marital=unknown",
+        "education=basic.4y", "education=basic.6y", "education=basic.9y", "education=high.school", "education=illiterate", "education=professional.course", "education=university.degree", "education=unknown",
+        "default=no", "default=yes", "default=unknown", "housing=no", "housing=yes", "housing=unknown", "loan=no", "loan=yes", "loan=unknown",
+        "contact=cellular", "contact=telephone", "month=jan", "month=feb", "month=mar", "month=apr", "month=may", "month=jun", "month=jul", "month=aug", "month=sep", "month=oct", "month=nov", "month=dec",
+        "day_of_week=mon", "day_of_week=tue", "day_of_week=wed", "day_of_week=thu", "day_of_week=fri",
+        "poutcome=failure", "poutcome=nonexistent", "poutcome=success"
+      ],
+      "shape": [1, 65],
+      "dtype": "float32"
+    }
+  },
+  "label": {
+    "column": "y",
+    "positive_value": "yes",
+    "negative_value": "no",
+    "encoded_values": [0, 1],
+    "meaning": "bank customer subscribed to a term deposit; 1=yes (positive), 0=no (negative)"
+  },
+  "reference_tests": [
+    {
+      "test_id": "bank-marketing-reference-001",
+      "synthetic_raw_input": {
+        "age": 40.0241,
+        "campaign": 2.56759,
+        "pdays": 999,
+        "previous": 0.172963,
+        "emp.var.rate": 0.0818855,
+        "cons.price.idx": 93.5757,
+        "cons.conf.idx": -40.5026,
+        "euribor3m": 3.62129,
+        "nr.employed": 5167.04,
+        "job": "unknown",
+        "marital": "unknown",
+        "education": "unknown",
+        "default": "unknown",
+        "housing": "unknown",
+        "loan": "unknown",
+        "contact": "cellular",
+        "month": "jan",
+        "day_of_week": "mon",
+        "poutcome": "nonexistent"
+      },
+      "expected_model_input": [
+        0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+        0, 0, 0, 1,
+        0, 0, 0, 0, 0, 0, 0, 1,
+        0, 0, 1, 0, 0, 1, 0, 0, 1,
+        1, 0,
+        1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        1, 0, 0, 0, 0,
+        0, 1, 0
+      ]
+    }
+  ],
+  "validation": {
+    "check_order": ["protocol_version", "manifest_version", "model_version", "model_shape", "feature_schema", "feature_order", "units", "encoding", "preprocessing_version", "label_semantics", "label_range", "reference_outputs", "report_schema"],
+    "reference_atol": 0.000001,
+    "failure_codes": ["protocol_version_mismatch", "manifest_version_mismatch", "model_version_mismatch", "model_shape_mismatch", "feature_schema_mismatch", "feature_order_mismatch", "unit_mismatch", "encoding_mismatch", "preprocessing_version_mismatch", "label_semantics_mismatch", "label_range_mismatch", "reference_output_mismatch", "invalid_report"]
+  }
+}

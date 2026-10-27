@@ -52,6 +52,12 @@ cp deploy/.env.example deploy/.env   # then set the passwords
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
+## Design specifications
+
+- [PostgreSQL schema and sequence-diagram DB mapping](planning/db-schema.md)
+- [Client conformance contract](planning/conformance-manifest.md), [JSON Schema](planning/conformance-manifest.schema.json), and [Bank Marketing example](planning/examples/bank_marketing_manifest.json)
+- [ER diagram source](diagrams/database/er_diagram.puml) and rendered [PNG](diagrams/database/er_diagram.png)
+
 ## Workflow
 
 1. Open an issue for every task, including non-coding work (research, meetings, documentation,
