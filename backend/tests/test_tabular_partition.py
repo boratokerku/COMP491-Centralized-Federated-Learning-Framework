@@ -104,3 +104,22 @@ def test_refuses_to_overwrite_foreign_directory(tmp_path):
     with pytest.raises(FileExistsError):
         write_partitions(p, CONFIG, tmp_path, summarize(p, CONFIG))
     assert (tmp_path / "notes.txt").exists()
+
+
+def test_same_seed_produces_identical_files_on_disk(tmp_path):
+    dir_a = tmp_path / "run_a"
+    dir_b = tmp_path / "run_b"
+    df = _frame(n=500, positive_ratio=0.2)
+
+    pa = iid_partition(df, CONFIG, num_clients=3, seed=42)
+    write_partitions(pa, CONFIG, dir_a, summarize(pa, CONFIG, seed=42, num_clients=3))
+
+    pb = iid_partition(df, CONFIG, num_clients=3, seed=42)
+    write_partitions(pb, CONFIG, dir_b, summarize(pb, CONFIG, seed=42, num_clients=3))
+
+    assert (dir_a / "test.csv").read_bytes() == (dir_b / "test.csv").read_bytes()
+    for i in range(3):
+        assert (dir_a / f"client_{i}/train.csv").read_bytes() == (dir_b / f"client_{i}/train.csv").read_bytes()
+        assert (dir_a / f"client_{i}/test.csv").read_bytes() == (dir_b / f"client_{i}/test.csv").read_bytes()
+    assert (dir_a / "summary.json").read_bytes() == (dir_b / "summary.json").read_bytes()
+
