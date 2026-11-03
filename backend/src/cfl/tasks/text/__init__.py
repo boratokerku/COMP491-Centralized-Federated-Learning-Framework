@@ -1,1 +1,1 @@
-"""Image task (MedMNIST): small CNN, data loading, conformance manifest."""
+"""Text task (UCI SMS Spam Collection): hashing tokenizer, embedding model."""

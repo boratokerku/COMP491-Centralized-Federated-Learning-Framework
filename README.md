@@ -14,7 +14,7 @@ backend/
     gateway/       # FastAPI gateway (only entry point for clients)
     coordinator/   # round state machine (state lives in PostgreSQL)
     client/        # client runtime + conformance checker
-    tasks/         # one subpackage per modality: tabular/ + second modality (image or text, open)
+    tasks/         # one subpackage per modality: tabular/ (Bank Marketing) + text/ (SMS Spam)
     reporting/     # end-of-training report, exports, plots
   configs/         # run configs (YAML)
   tests/

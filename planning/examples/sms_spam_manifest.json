@@ -1,0 +1,176 @@
+{
+  "manifest_version": "1.0.0",
+  "dataset": {
+    "name": "sms_spam",
+    "dataset_version": "sms-spam-collection-uci-228",
+    "source_id": "UCI ML Repository dataset 228; CC BY 4.0",
+    "raw_label_column": "label"
+  },
+  "model": {
+    "architecture_id": "sms_hash_embed",
+    "architecture_version": "1.0.0",
+    "framework": "pytorch",
+    "task": "binary_classification",
+    "input_dim": 64,
+    "output_dim": 2,
+    "fingerprint": "14dfbfda193f79f05e7da1c27cd7a31dab4dff94cf76854cb84375583fd3ddea",
+    "parameters": [
+      {
+        "name": "emb.weight",
+        "shape": [16384, 64],
+        "dtype": "float32"
+      },
+      {
+        "name": "fc1.weight",
+        "shape": [32, 64],
+        "dtype": "float32"
+      },
+      {
+        "name": "fc1.bias",
+        "shape": [32],
+        "dtype": "float32"
+      },
+      {
+        "name": "fc2.weight",
+        "shape": [2, 32],
+        "dtype": "float32"
+      },
+      {
+        "name": "fc2.bias",
+        "shape": [2],
+        "dtype": "float32"
+      }
+    ]
+  },
+  "preprocessing": {
+    "version": "1.0.0",
+    "implementation_id": "cfl.tasks.text.tokenizer.encode",
+    "encoding": "hashed unigram and bigram ids, see tokenizer",
+    "scaling": "none",
+    "fit_policy": "nothing_fitted",
+    "tokenizer": {
+      "algorithm": "hashed_ngrams",
+      "version": "1.0.0",
+      "normalization": "unicode NFKC, then lower-case",
+      "token_pattern": "[a-z0-9]+",
+      "ngrams": [1, 2],
+      "ngram_order": "interleaved: t0, t1, t0_t1, t2, t1_t2, ...",
+      "ngram_joiner": "_",
+      "hash": "fnv1a_32 over utf-8 bytes",
+      "id_formula": "1 + hash(feature) mod (num_buckets - 1)",
+      "num_buckets": 16384,
+      "pad_id": 0,
+      "max_len": 64,
+      "padding": "keep the first max_len ids, right-pad with pad_id"
+    }
+  },
+  "input_schema": {
+    "features": [
+      {
+        "name": "text",
+        "type": "text",
+        "encoding": "utf-8"
+      }
+    ],
+    "model_input": {
+      "feature_names": ["token_0", "token_1", "token_2", "token_3", "token_4", "token_5", "token_6", "token_7", "token_8", "token_9", "token_10", "token_11", "token_12", "token_13", "token_14", "token_15", "token_16", "token_17", "token_18", "token_19", "token_20", "token_21", "token_22", "token_23", "token_24", "token_25", "token_26", "token_27", "token_28", "token_29", "token_30", "token_31", "token_32", "token_33", "token_34", "token_35", "token_36", "token_37", "token_38", "token_39", "token_40", "token_41", "token_42", "token_43", "token_44", "token_45", "token_46", "token_47", "token_48", "token_49", "token_50", "token_51", "token_52", "token_53", "token_54", "token_55", "token_56", "token_57", "token_58", "token_59", "token_60", "token_61", "token_62", "token_63"],
+      "shape": [1, 64],
+      "dtype": "int64"
+    }
+  },
+  "label": {
+    "column": "label",
+    "positive_value": "spam",
+    "negative_value": "ham",
+    "encoded_values": [0, 1],
+    "meaning": "SMS message is spam; 1=spam (positive), 0=ham (negative)"
+  },
+  "reference_tests": [
+    {
+      "test_id": "sms-spam-reference-001",
+      "synthetic_raw_input": {
+        "text": "WINNER!! Claim your FREE prize now: call 09061701461"
+      },
+      "expected_model_input": [13571, 1294, 15372, 10862, 13221, 5557, 11580, 16007, 8370, 15808, 10848, 5243, 11097, 4931, 13354, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "test_id": "sms-spam-reference-002",
+      "synthetic_raw_input": {
+        "text": "Ok lar... see you at 6?"
+      },
+      "expected_model_input": [4231, 844, 11134, 232, 14026, 4997, 479, 12834, 9972, 12735, 5551, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "test_id": "sms-spam-reference-003",
+      "synthetic_raw_input": {
+        "text": "ＦＲＥＥ ｅｎｔｒｙ ２ wkly comp"
+      },
+      "expected_model_input": [5557, 688, 96, 2060, 1972, 1844, 4972, 10500, 3620, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "test_id": "sms-spam-reference-004",
+      "synthetic_raw_input": {
+        "text": "café naïve résumé"
+      },
+      "expected_model_input": [10206, 10959, 15779, 12272, 4586, 9046, 7905, 12271, 5779, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "test_id": "sms-spam-reference-005",
+      "synthetic_raw_input": {
+        "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21 word22 word23 word24 word25 word26 word27 word28 word29 word30 word31 word32 word33 word34 word35 word36 word37 word38 word39 word40 word41 word42 word43 word44 word45 word46 word47 word48 word49"
+      },
+      "expected_model_input": [15521, 14094, 4484, 1992, 8766, 565, 9993, 9813, 13540, 8386, 6515, 12667, 4264, 11240, 9108, 4105, 13392, 2678, 279, 4723, 6543, 6150, 9963, 7577, 9745, 9004, 1720, 15398, 936, 442, 9054, 1869, 2034, 3296, 15569, 16139, 3159, 1183, 8340, 15397, 2378, 13970, 12841, 1868, 1466, 441, 3247, 9689, 11912, 8262, 12207, 12543, 2562, 11116, 5832, 3981, 13704, 2554, 14835, 7187, 5415, 8614, 4004, 4333]
+    },
+    {
+      "test_id": "sms-spam-reference-006",
+      "synthetic_raw_input": {
+        "text": ""
+      },
+      "expected_model_input": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    }
+  ],
+  "forward_reference_tests": [
+    {
+      "test_id": "sms-spam-forward-001",
+      "weights": "reference_sin_v1",
+      "model_input": [13571, 1294, 15372, 10862, 13221, 5557, 11580, 16007, 8370, 15808, 10848, 5243, 11097, 4931, 13354, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "expected_logits": [0.09016292, -0.038291663]
+    },
+    {
+      "test_id": "sms-spam-forward-002",
+      "weights": "reference_sin_v1",
+      "model_input": [4231, 844, 11134, 232, 14026, 4997, 479, 12834, 9972, 12735, 5551, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "expected_logits": [0.08783439, -0.037497938]
+    },
+    {
+      "test_id": "sms-spam-forward-003",
+      "weights": "reference_sin_v1",
+      "model_input": [5557, 688, 96, 2060, 1972, 1844, 4972, 10500, 3620, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "expected_logits": [0.08898152, -0.035837125]
+    },
+    {
+      "test_id": "sms-spam-forward-004",
+      "weights": "reference_sin_v1",
+      "model_input": [10206, 10959, 15779, 12272, 4586, 9046, 7905, 12271, 5779, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "expected_logits": [0.12878023, -0.01268566]
+    },
+    {
+      "test_id": "sms-spam-forward-005",
+      "weights": "reference_sin_v1",
+      "model_input": [15521, 14094, 4484, 1992, 8766, 565, 9993, 9813, 13540, 8386, 6515, 12667, 4264, 11240, 9108, 4105, 13392, 2678, 279, 4723, 6543, 6150, 9963, 7577, 9745, 9004, 1720, 15398, 936, 442, 9054, 1869, 2034, 3296, 15569, 16139, 3159, 1183, 8340, 15397, 2378, 13970, 12841, 1868, 1466, 441, 3247, 9689, 11912, 8262, 12207, 12543, 2562, 11116, 5832, 3981, 13704, 2554, 14835, 7187, 5415, 8614, 4004, 4333],
+      "expected_logits": [0.10802148, -0.022177752]
+    },
+    {
+      "test_id": "sms-spam-forward-006",
+      "weights": "reference_sin_v1",
+      "model_input": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "expected_logits": [0.10656054, -0.023132872]
+    }
+  ],
+  "validation": {
+    "check_order": ["protocol_version", "manifest_version", "model_version", "model_shape", "feature_schema", "feature_order", "units", "encoding", "preprocessing_version", "label_semantics", "label_range", "reference_outputs", "forward_outputs", "report_schema"],
+    "reference_atol": 1e-06,
+    "forward_atol": 1e-05,
+    "failure_codes": ["protocol_version_mismatch", "manifest_version_mismatch", "model_version_mismatch", "model_shape_mismatch", "feature_schema_mismatch", "feature_order_mismatch", "unit_mismatch", "encoding_mismatch", "preprocessing_version_mismatch", "label_semantics_mismatch", "label_range_mismatch", "reference_output_mismatch", "forward_output_mismatch", "invalid_report"]
+  }
+}

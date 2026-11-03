@@ -27,8 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-image = ["medmnist>=3.0"]
-dev = ["pytest>=8.0", "ruff>=0.4"]
+dev = ["pytest>=8.0", "ruff>=0.4", "jsonschema>=4.21"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cfl"]

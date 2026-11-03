@@ -28,7 +28,7 @@ This document establishes the **requirements, feature boundaries (mandatory vs. 
 Based on the official Capstone Project Description and the project proposal (advisors: Prof. Mehmet Emre Gürsoy, Prof. Barış Akgün; this document has not yet been reviewed by them):
 - **Core Focus:** A **distributed systems, robustness, compatibility, and observability project**, not a study of new federated learning algorithms.
 - **Cross-Silo Setting:** A small number (e.g., 3–10) of independently operated client organizations participating in centrally coordinated training over real networks (Internet).
-- **Data Modalities:** The advisors confirmed this point only (the rest of this document is still pending their review): tabular banking data is mandatory. Exactly one additional modality is demonstrated in the same framework: **image or text**, as in the proposal (open decision, Section 6, B2). This narrows the Capstone Project Description, which lists tabular, image and text.
+- **Data Modalities:** The advisors confirmed this point only (the rest of this document is still pending their review): tabular banking data is mandatory. Exactly one additional modality is demonstrated in the same framework: **text** (UCI SMS Spam Collection); no image modality. This narrows the Capstone Project Description, which lists tabular, image and text.
 - **Fail-Safe Client Onboarding:** Incompatible clients must be detected and rejected before they can corrupt the global model.
 
 ---
@@ -57,7 +57,7 @@ Based on the official Capstone Project Description and the project proposal (adv
 ### 3.1. Mandatory Features (Core Deliverables)
 
 #### A. Core Machine Learning & Aggregation
-1. **Neural Network Framework:** Built on PyTorch: an MLP for tabular data, and a model suited to the second modality (e.g., a small CNN for images or an embedding-based model for text).
+1. **Neural Network Framework:** Built on PyTorch: an MLP for tabular data (`bank_mlp`) and a hashed-token embedding model for text (`sms_hash_embed`). Tokens are hashed (FNV-1a) into a fixed number of buckets, so no shared vocabulary has to be built from client data. All parameters are float32 with no buffers (no BatchNorm), so every entry can be averaged.
 2. **Federated Optimization Algorithms:**
    - **FedAvg (Federated Averaging):** Sample-weighted averaging of local model weights.
    - **FedProx:** Addition of a proximal term (with a coefficient μ) to the client local objective, keeping local models close to the global model to address system and data heterogeneity.
@@ -223,4 +223,3 @@ Decisions that are still open. When one is closed, write it into the relevant se
 | A15 | Use of university cluster nodes as client machines | (a) Cluster nodes run some of the clients (b) Only team members' machines | (a) if the advisors confirm access. Check first: outbound HTTPS (port 443) from compute nodes, whether Docker is allowed (clusters often only allow Apptainer/Singularity, which can run our Docker image), and job time limits. A first trial runs on team members' machines. | Advisors |
 | S2 | TLS certificate source | (a) Let's Encrypt on a hostname (free: `sslip.io`, a `ku.edu.tr` subdomain, or a GitHub Student Pack `.tech`/`.me` domain); nothing to distribute; needs a public IP (b) Own CA via Caddy `tls internal`; works without a public IP; clients receive our root certificate | Public IP → (a), otherwise (b). | A1 |
 | B1 | Tabular dataset | (a) Banking dataset from the advisors (b) UCI Bank Marketing (c) UCI Default of Credit Card Clients | (a) if it arrives with a clear license; development starts on (b). | Advisors |
-| B2 | Second modality and dataset | (a) Image: MedMNIST (e.g., BloodMNIST or DermaMNIST, 28×28; avoid multi-label ChestMNIST) (b) Text: UCI SMS Spam Collection | (a): easy download, trains on CPU, no shared-vocabulary problem across clients. Decide before WP7 (T7.1). | Team |
