@@ -1,0 +1,15 @@
+# PostgreSQL as a read-only Grafana data source (role cfl_web). Dashboards: Hilal.
+apiVersion: 1
+datasources:
+  - name: CFL PostgreSQL
+    uid: cfl-postgres
+    type: grafana-postgresql-datasource
+    url: postgres:5432
+    user: cfl_web
+    isDefault: true
+    secureJsonData:
+      password: $CFL_WEB_DB_PASSWORD
+    jsonData:
+      database: $POSTGRES_DB
+      sslmode: disable
+      postgresVersion: 1600

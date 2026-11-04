@@ -1,0 +1,34 @@
+# One participating site (managed-code mode). Copy this folder to the site's machine:
+#
+#   cp client.env.example client.env      # server URL, client id, task, partition path
+#   printf '%s' '<token from the administrator>' > token.txt && chmod 600 token.txt
+#   docker compose --env-file client.env run --rm client check
+#   docker compose --env-file client.env up -d
+#
+# The site's data is mounted read-only and never leaves this machine; only model updates are
+# sent to the gateway over HTTPS.
+
+services:
+  client:
+    image: ${CFL_CLIENT_IMAGE:-ghcr.io/boratokerku/cfl-client:latest}
+    init: true
+    restart: unless-stopped
+    environment:
+      CFL_SERVER_URL: ${CFL_SERVER_URL:?set CFL_SERVER_URL}
+      CFL_CLIENT_ID: ${CFL_CLIENT_ID:?set CFL_CLIENT_ID}
+      CFL_TASK: ${CFL_TASK:?set CFL_TASK to tabular or text}
+      CFL_TASK_SPEC: ${CFL_TASK_SPEC:-}
+      CFL_CA_BUNDLE: ${CFL_CA_BUNDLE_IN_CONTAINER:-}
+    volumes:
+      - ${CFL_PARTITION_DIR:?set CFL_PARTITION_DIR}:/data:ro
+      - state:/state
+      - ${CFL_CA_DIR:-./ca}:/ca:ro
+    secrets:
+      - cfl_token
+
+secrets:
+  cfl_token:
+    file: ${CFL_TOKEN_FILE:-./token.txt}
+
+volumes:
+  state:

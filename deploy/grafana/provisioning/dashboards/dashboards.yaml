@@ -1,0 +1,9 @@
+# Loads every dashboard JSON file in this folder on Grafana start (dashboards: Hilal).
+apiVersion: 1
+providers:
+  - name: cfl
+    folder: CFL
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

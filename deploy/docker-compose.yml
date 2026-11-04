@@ -1,28 +1,140 @@
-# Server-side services for local development.
-# Gateway, coordinator and Caddy (TLS) will be added here as they are implemented.
+# Server side of the framework: one command on the cloud VM (or a laptop for local testing).
+#
+#   cp deploy/.env.example deploy/.env      # set passwords and the two hostnames
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#   docker compose -f deploy/docker-compose.yml --profile web up -d --build   # with the website
+#
+# Only Caddy publishes ports to the outside (80/443). PostgreSQL is bound to localhost for
+# administration over SSH; everything else is reachable only inside the compose network.
+# Full guide: deploy/README.md
+
+name: COMP491-Centralized-Federated-Learning-Framework
+
+x-server: &server
+  image: ${CFL_SERVER_IMAGE:-cfl-server:${CFL_VERSION:-dev}}
+  build:
+    context: ../backend
+    target: server
+    args:
+      CFL_VERSION: ${CFL_VERSION:-dev}
+  init: true
+  restart: unless-stopped
+  environment:
+    CFL_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-cfl}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-cfl}
+
 services:
   postgres:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-cfl}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
       POSTGRES_DB: ${POSTGRES_DB:-cfl}
+      CFL_WEB_DB_PASSWORD: ${CFL_WEB_DB_PASSWORD:?set CFL_WEB_DB_PASSWORD in deploy/.env}
     ports:
-      - "127.0.0.1:5432:5432"   # local access only; never exposed publicly
+      - "127.0.0.1:${CFL_POSTGRES_PORT:-5432}:5432" # administration only (SSH tunnel on the VM)
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro # creates the read-only cfl_web role
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Brings the schema to the latest Alembic revision, then exits.
+  migrate:
+    <<: *server
+    restart: "no"
+    command: [ "alembic", "upgrade", "head" ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  coordinator:
+    <<: *server
+    command: [ "python", "-m", "cfl.coordinator", "--models", "/models" ]
+    volumes:
+      - models:/models
+      # The server's held-out test sets (data/<modality>/partitions/<dataset>/test.csv).
+      # Never mount client partitions here on the VM.
+      - ${CFL_SERVER_DATA:-../data}:/srv/data:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  gateway:
+    <<: *server
+    volumes:
+      - models:/models
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Website (Hilal): built from frontend/Dockerfile, must listen on port 3000.
+  web:
+    profiles: [ "web" ]
+    image: ${CFL_WEB_IMAGE:-cfl-web:${CFL_VERSION:-dev}}
+    build:
+      context: ../frontend
+    init: true
+    restart: unless-stopped
+    environment:
+      # Read-only role: SELECT on the tables, no access to client token hashes.
+      DATABASE_URL: postgresql://cfl_web:${CFL_WEB_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-cfl}
+      REPORTS_DIR: /models
+      PUBLIC_URL: https://${CFL_WEB_DOMAIN:-localhost}
+    volumes:
+      - models:/models:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
   grafana:
     image: grafana/grafana:11.1.0
+    restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in deploy/.env}
-    ports:
-      - "127.0.0.1:3001:3000"   # reached through Caddy (/grafana/) in deployment
+      GF_SERVER_ROOT_URL: https://${CFL_WEB_DOMAIN:-localhost}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      CFL_WEB_DB_PASSWORD: ${CFL_WEB_DB_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-cfl}
     volumes:
       - grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
-      - postgres
+      migrate:
+        condition: service_completed_successfully
+
+  # TLS termination. With public hostnames Caddy obtains Let's Encrypt certificates; with
+  # *.localhost it uses its own local CA (export it for clients with deploy/scripts/caddy_ca.sh).
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    environment:
+      CFL_GATEWAY_DOMAIN: ${CFL_GATEWAY_DOMAIN:-fl.localhost}
+      CFL_WEB_DOMAIN: ${CFL_WEB_DOMAIN:-localhost}
+    ports:
+      - "${CFL_HTTP_PORT:-80}:80"
+      - "${CFL_HTTPS_PORT:-443}:443"
+      - "${CFL_HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      default:
+        # Containers on this network (e.g. a local test client) reach the gateway by its name.
+        aliases:
+          - ${CFL_GATEWAY_DOMAIN:-fl.localhost}
+          - ${CFL_WEB_DOMAIN:-localhost}
+    depends_on:
+      - gateway
 
 volumes:
   pgdata:
+  models:
   grafana:
+  caddy_data:
+  caddy_config:
