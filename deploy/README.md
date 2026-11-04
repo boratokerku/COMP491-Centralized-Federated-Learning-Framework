@@ -72,7 +72,9 @@ docker compose --env-file client.env run --rm client check   # setup + gateway r
 docker compose --env-file client.env up -d
 ```
 
-`check` verifies the token file, the partition files, the task, the state directory and the TLS connection to the gateway, and exits non-zero on any problem. The partition is mounted read-only; the token is a Docker secret, never an environment variable or part of the image. `run` needs the client runtime, which is not implemented yet.
+`check` verifies the token file, the partition files, the task, the state directory and the TLS connection to the gateway, and exits non-zero on any problem. The partition is mounted read-only; the token is a Docker secret, never an environment variable or part of the image.
+
+`run` (the default command) is the shared client runtime (`backend/src/cfl/client/runtime.py`): it registers, passes the conformance check for its dataset (waiting until a run uses it), then polls for tasks, trains, uploads and, when a run it took part in has finished, downloads and verifies the final model into `/state/final/<run_id>/`. Every update is written to `/state` before it is uploaded and removed once the gateway has decided, so a site that crashes or loses its connection resends the same `update_id` after a restart and is counted once. Keep the `state` volume across restarts. Optional settings: `CFL_POLL_INTERVAL` (seconds, default 3), `CFL_SEED` (local training seed, default 0); `run --exit-after-final` stops after the final model of the latest run the site trained in (for demos).
 
 ## Publishing images (managed-code mode)
 
@@ -94,7 +96,7 @@ University clusters that only allow Apptainer can build from the same archive: `
 
 ## Where each team member plugs in
 
-- **Client code (Merve: text, Enes: tabular).** Managed-code mode means the training code is part of the image, not mounted at run time. Implement `TaskSpec` (`backend/src/cfl/core/task.py`) in the repository, e.g. `backend/src/cfl/tasks/text/spec.py`; the next image build contains it. Sites select it with `CFL_TASK_SPEC=cfl.tasks.text.spec:SmsTaskSpec`, and `check` confirms it imports. New Python dependencies go into `backend/pyproject.toml`.
+- **Client code (Merve: text, Enes: tabular).** Managed-code mode means the training code is part of the image, not mounted at run time. Implement `TaskSpec` (`backend/src/cfl/core/task.py`) in the repository, e.g. `backend/src/cfl/tasks/text/spec.py`; the next image build contains it. Sites select it with `CFL_TASK_SPEC=cfl.tasks.text.spec:SmsTaskSpec` (the class is constructed without arguments), and `check` confirms it imports. Without `CFL_TASK_SPEC` the image uses `cfl.client.reference.ReferenceTaskSpec`, the reference behaviour and a starting point for your own implementation. New Python dependencies go into `backend/pyproject.toml`.
 - **Independent-implementation client (Enes).** Not a `cfl-client` image: it talks to the gateway's REST API directly and only has to follow `planning/api-spec.md` and the conformance report format.
 - **Website (Hilal).** Add `frontend/Dockerfile` that serves the Next.js app on port 3000 and start the stack with `--profile web`. It receives `DATABASE_URL` (read-only role `cfl_web`), `REPORTS_DIR=/models` (read-only) and `PUBLIC_URL`. Grafana dashboards go into `deploy/grafana/provisioning/dashboards/` (provisioned on start).
 

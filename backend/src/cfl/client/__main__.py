@@ -14,6 +14,11 @@ Configuration comes from the environment, so the same image runs at every site:
     CFL_PARTITION_DIR   this site's partition (train.csv, val.csv, test.csv), mounted read-only
     CFL_STATE_DIR       writable directory for pending updates and downloaded models
     CFL_CA_BUNDLE       optional CA certificate to trust, for a server with its own CA
+    CFL_POLL_INTERVAL   seconds between task polls when idle (default 3)
+    CFL_SEED            seed for local training (default 0); results are reproducible per seed
+
+`run --exit-after-final` stops once the final model of a run this site trained in has been
+downloaded and verified (useful for demos and tests); without it the client keeps serving.
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -117,13 +123,59 @@ def check() -> int:
     return 0 if not problems else 1
 
 
-def run() -> int:
-    print(
-        "error: the client runtime (polling, training, uploads) is not implemented yet; "
-        "`check` verifies the setup in the meantime",
-        file=sys.stderr,
+def _load_task_spec(task_name: str):
+    """CFL_TASK_SPEC=module:Class (constructed without arguments), else the reference spec."""
+    from cfl.client.reference import ReferenceTaskSpec
+
+    spec_path = os.environ.get("CFL_TASK_SPEC")
+    if not spec_path:
+        return ReferenceTaskSpec(task_name)
+    module, _, cls = spec_path.partition(":")
+    return getattr(importlib.import_module(module), cls)()
+
+
+def run(exit_after_final: bool = False) -> int:
+    from cfl.client.http import GatewayHTTPError, HttpTransport
+    from cfl.client.runtime import ClientRuntime, ConformanceFailed
+
+    # As PID 1 in a container, SIGTERM is ignored unless handled. Stopping is always safe:
+    # a pending update stays on disk and is resent after the restart.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+
+    task_name = _env("CFL_TASK")
+    token = Path(_env("CFL_TOKEN_FILE", "/run/secrets/cfl_token")).read_text().strip()
+    version = os.environ.get("CFL_CLIENT_VERSION", "cfl-client/dev")
+    transport = HttpTransport(
+        _env("CFL_SERVER_URL"),
+        token,
+        verify=os.environ.get("CFL_CA_BUNDLE") or True,
+        user_agent=version,
     )
-    return 2
+    runtime = ClientRuntime(
+        transport=transport,
+        task=_load_task_spec(task_name),
+        client_id=_env("CFL_CLIENT_ID"),
+        client_version=version,
+        dataset=get_task(task_name).dataset,
+        partition_dir=Path(_env("CFL_PARTITION_DIR", "/data")),
+        state_dir=Path(_env("CFL_STATE_DIR", "/state")),
+        poll_interval_s=float(os.environ.get("CFL_POLL_INTERVAL", "3")),
+        seed=int(os.environ.get("CFL_SEED", "0")),
+    )
+    try:
+        runtime.run(exit_after_final=exit_after_final)
+    except ConformanceFailed as exc:
+        print(f"error: conformance check failed: {exc}", file=sys.stderr)
+        print(f"details: {exc.details}", file=sys.stderr)
+        return 1
+    except GatewayHTTPError as exc:
+        print(f"error: the gateway refused this client: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("stopped; start again to continue")
+    finally:
+        transport.close()
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -133,8 +185,9 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("command", choices=["check", "run"])
+    parser.add_argument("--exit-after-final", action="store_true", help="with run: see above")
     args = parser.parse_args(argv)
-    return check() if args.command == "check" else run()
+    return check() if args.command == "check" else run(args.exit_after_final)
 
 
 if __name__ == "__main__":
