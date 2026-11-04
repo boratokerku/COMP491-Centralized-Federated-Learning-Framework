@@ -23,6 +23,7 @@ class SimulationResult:
     run: RunRecord
     state: StateStore
     models: ModelStore
+    verified_by: list[str]  # clients that downloaded and verified the final model
 
 
 def run_simulation(
@@ -63,4 +64,5 @@ def run_simulation(
             client.tick()
     else:
         raise RuntimeError(f"run did not finish within {max_steps} steps")
-    return SimulationResult(state.get_run(run.run_id), state, models)
+    verified_by = [c.client_id for c in clients if c.fetch_final_model(run.run_id) is not None]
+    return SimulationResult(state.get_run(run.run_id), state, models, verified_by)

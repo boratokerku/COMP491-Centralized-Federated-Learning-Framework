@@ -10,6 +10,7 @@ import time
 import uuid
 from pathlib import Path
 
+from cfl.core.artifact import verify_artifact
 from cfl.core.serialization import bytes_to_state_dict, sha256, state_dict_to_bytes
 from cfl.core.transport import Transport
 from cfl.protocol.messages import RegisterRequest, UpdateAck, UpdateMetadata
@@ -85,3 +86,12 @@ class SimulatedClient:
         )
         self._finished.add((task.run_id, task.round_id))
         return ack
+
+    def fetch_final_model(self, run_id: str) -> dict | None:
+        """Download the final artifact and verify it locally (checksums, then the reference
+        predictions with ONNX Runtime). Returns its descriptor, or None if not ready yet."""
+        downloaded = self.transport.download_final_artifact(run_id)
+        if downloaded is None:
+            return None
+        files, onnx_sha256 = downloaded
+        return verify_artifact(files, onnx_sha256)

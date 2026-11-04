@@ -50,3 +50,9 @@ class InMemoryTransport(Transport):
 
     def upload_update(self, metadata: UpdateMetadata, weights: bytes) -> UpdateAck:
         return self.intake.submit(metadata, weights)
+
+    def download_final_artifact(self, run_id: str) -> tuple[dict[str, bytes], str] | None:
+        files = self.coordinator.final_artifact(run_id)
+        if files is None:
+            return None
+        return files, self.state.get_run(run_id).final_model_sha256

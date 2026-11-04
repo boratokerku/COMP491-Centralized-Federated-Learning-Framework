@@ -60,6 +60,10 @@ class RunRecord:
     started_at: datetime | None = None
     completed_at: datetime | None = None
     failure_reason: str | None = None
+    final_model_path: str | None = None  # model.onnx of the final artifact
+    final_model_sha256: str | None = None
+    final_model_format: str | None = None
+    final_model_bytes: int | None = None
 
 
 @dataclass(frozen=True)

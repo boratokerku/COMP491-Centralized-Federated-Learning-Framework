@@ -75,8 +75,16 @@ def main() -> int:
     done = sum(r.state is RoundState.DONE for r in rounds)
     print(
         f"\nrun {run.run_id} {run.status.value}: {done}/{len(rounds)} rounds done, "
-        f"final model v{run.model_version} sha256={run.model_sha256[:16]}…"
+        f"final model v{run.model_version}"
     )
+    if run.final_model_path:
+        print(
+            f"final artifact: {run.final_model_path} ({run.final_model_bytes} bytes, "
+            f"sha256={run.final_model_sha256[:16]}…), verified by {len(result.verified_by)} "
+            f"clients: {', '.join(result.verified_by)}"
+        )
+    elif run.failure_reason:
+        print(f"run failed: {run.failure_reason}")
     return 0
 
 
