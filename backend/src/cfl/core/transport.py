@@ -1,8 +1,8 @@
 """Client-side transport interface.
 
 The client always initiates communication (polling), so the same interface works behind NAT.
-Implementations: InMemoryTransport (simulation), HttpTransport (distributed, over TLS),
-and FaultyTransport (wraps another transport to inject delays, drops and duplicates in tests).
+Implementations: cfl.simulation.transport.InMemoryTransport (simulation) and
+cfl.client.http.HttpTransport (distributed mode, HTTPS with retries and checksum checks).
 """
 
 from __future__ import annotations
