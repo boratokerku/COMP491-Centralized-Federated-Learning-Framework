@@ -1,26 +1,29 @@
-# Example run config for local simulation on the tabular dataset (draft).
+# Run config for local simulation on the tabular dataset (UCI Bank Marketing).
+# Validated by cfl.coordinator.config.RunConfig; unknown keys are rejected.
 run:
   name: sim-tabular-fedavg
   seed: 42
   mode: simulation          # simulation | distributed
 
 task:
-  name: tabular
-  data_dir: ../data/tabular   # raw data is never committed
+  name: tabular             # tabular | text
+  data_dir: data/tabular    # relative to the repository root; raw data is never committed
   num_clients: 4
-  partition: iid            # iid | label_skew | feature_skew
+  partition: iid
 
 strategy:
   name: fedavg              # fedavg | fedprox
-  # mu: 0.01                # only for fedprox
+  # mu: 0.01                # required for fedprox, not allowed for fedavg
 
 rounds:
   num_rounds: 20
-  client_fraction: 1.0       # random subset of available clients per round (seeded)
+  client_fraction: 1.0      # random subset of eligible clients per round (seeded)
   min_participants: 3
   round_deadline_s: 120
+  max_num_samples: 10000    # reject updates that report more samples than any client holds
 
 client:
   local_epochs: 1
   batch_size: 64
   learning_rate: 0.001
+  class_weights: [1.0, 7.9] # ~ negatives / positives (11.3% "yes"); fixed for all clients
