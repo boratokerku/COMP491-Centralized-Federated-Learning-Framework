@@ -1,0 +1,17 @@
+# Settings of one participating site when the client runs directly with Python (no Docker):
+#   cfl-client run --config client.yaml
+# Relative paths are relative to this file. Command-line options and CFL_* environment
+# variables override these values. Never put the token itself here; only its file.
+
+server_url: https://fl.203-0-113-7.sslip.io
+client_id: bank-a
+task: tabular                    # tabular | text
+# task_spec: mypackage.spec:MyTaskSpec   # default: cfl.client.reference.ReferenceTaskSpec
+
+token_file: token.txt            # chmod 600; from `cfl-admin add-client` on the server
+partition_dir: ../../data/tabular/partitions/bank_marketing/client_0
+state_dir: state                 # keep it: pending updates are resent from here after a crash
+
+# ca_bundle: ca/root.crt         # only for a server with its own CA (local testing)
+poll_interval: 3
+seed: 0

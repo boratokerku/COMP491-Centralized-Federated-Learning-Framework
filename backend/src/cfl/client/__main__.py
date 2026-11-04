@@ -7,18 +7,22 @@
                  --manifest FILE works offline (e.g. planning/examples/*_manifest.json)
     run          take part in training runs (the client runtime; see planning/interfaces.md)
 
-Configuration comes from the environment, so the same image runs at every site:
+Settings come from command-line options, CFL_* environment variables or a YAML config file
+(--config), in that order of precedence (cfl.client.settings; `--help` lists them all):
 
-    CFL_SERVER_URL      gateway base URL, e.g. https://fl.203-0-113-7.sslip.io
-    CFL_CLIENT_ID       this site's approved client id
-    CFL_TASK            tabular | text
-    CFL_TASK_SPEC       optional module:Class of the site's TaskSpec implementation
-    CFL_TOKEN_FILE      file with the bearer token (a Docker secret), default /run/secrets/cfl_token
-    CFL_PARTITION_DIR   this site's partition (train.csv, val.csv, test.csv), mounted read-only
-    CFL_STATE_DIR       writable directory for pending updates and downloaded models
-    CFL_CA_BUNDLE       optional CA certificate to trust, for a server with its own CA
-    CFL_POLL_INTERVAL   seconds between task polls when idle (default 3)
-    CFL_SEED            seed for local training (default 0); results are reproducible per seed
+    --server-url     CFL_SERVER_URL     gateway base URL, e.g. https://fl.203-0-113-7.sslip.io
+    --client-id      CFL_CLIENT_ID      this site's approved client id
+    --task           CFL_TASK           tabular | text
+    --task-spec      CFL_TASK_SPEC      optional module:Class of the site's TaskSpec
+    --token-file     CFL_TOKEN_FILE     file with the bearer token (default /run/secrets/cfl_token)
+    --partition-dir  CFL_PARTITION_DIR  this site's train.csv, val.csv, test.csv (default /data)
+    --state-dir      CFL_STATE_DIR      writable folder for pending updates (default /state)
+    --ca-bundle      CFL_CA_BUNDLE      CA certificate to trust, for a server with its own CA
+    --poll-interval  CFL_POLL_INTERVAL  seconds between task polls when idle (default 3)
+    --seed           CFL_SEED           seed for local training (default 0)
+
+The container image sets its defaults through the environment; outside a container, a config
+file is the easiest (deploy/client/client.yaml.example). The token itself is never an option.
 
 `run --exit-after-final` stops once the final model of a run this site trained in has been
 downloaded and verified (useful for demos and tests); without it the client keeps serving.
@@ -28,27 +32,21 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import os
 import signal
 import sys
 from pathlib import Path
 
 import httpx
 
+from cfl.client.settings import OPTIONS, ClientSettings, SettingsError, load_settings
 from cfl.protocol import PROTOCOL_VERSION
 from cfl.tasks.registry import get_task
 
 SPLITS = ("train", "val", "test")
 
 
-def _env(name: str, default: str | None = None) -> str:
-    value = os.environ.get(name, default)
-    if not value:
-        raise SystemExit(f"error: set {name}")
-    return value
-
-
-def check() -> int:
+def check(s: ClientSettings) -> int:
+    s.require("client_id", "task", "server_url")
     problems: list[str] = []
 
     def ok(message: str) -> None:
@@ -58,10 +56,9 @@ def check() -> int:
         print(f"  FAIL  {message}")
         problems.append(message)
 
-    client_id = _env("CFL_CLIENT_ID")
-    print(f"cfl-client {os.environ.get('CFL_CLIENT_VERSION', 'dev')} as {client_id}")
+    print(f"{s.client_version} as {s.client_id}")
 
-    token_file = Path(_env("CFL_TOKEN_FILE", "/run/secrets/cfl_token"))
+    token_file = s.token_file
     try:
         token = token_file.read_text().strip()
         ok(f"token file {token_file}") if token else fail(f"token file {token_file} is empty")
@@ -69,13 +66,13 @@ def check() -> int:
         fail(f"token file {token_file}: {exc.strerror}")
 
     try:
-        task = get_task(_env("CFL_TASK"))
+        task = get_task(s.task)
         ok(f"task {task.name} ({task.dataset})")
     except ValueError as exc:
         fail(str(exc))
         task = None
 
-    spec_path = os.environ.get("CFL_TASK_SPEC")
+    spec_path = s.task_spec
     if spec_path:
         module, _, cls = spec_path.partition(":")
         try:
@@ -84,7 +81,7 @@ def check() -> int:
         except (ImportError, AttributeError) as exc:
             fail(f"TaskSpec {spec_path}: {exc}")
 
-    partition = Path(_env("CFL_PARTITION_DIR", "/data"))
+    partition = s.partition_dir
     for split in SPLITS:
         path = partition / f"{split}.csv"
         if not path.is_file():
@@ -96,7 +93,7 @@ def check() -> int:
             except Exception as exc:  # report any parsing problem instead of a traceback
                 fail(f"{path}: {exc}")
 
-    state = Path(_env("CFL_STATE_DIR", "/state"))
+    state = s.state_dir
     probe = state / ".write-test"
     try:
         state.mkdir(parents=True, exist_ok=True)
@@ -106,13 +103,10 @@ def check() -> int:
     except OSError as exc:
         fail(f"state directory {state}: {exc.strerror}")
 
-    server = _env("CFL_SERVER_URL").rstrip("/")
-    if not server.startswith("https://"):
-        fail(f"CFL_SERVER_URL must use https:// (got {server})")
-    else:
-        verify: str | bool = os.environ.get("CFL_CA_BUNDLE") or True
+    server = s.server_url  # https:// is enforced by ClientSettings
+    if server:
         try:
-            response = httpx.get(f"{server}/health", timeout=10, verify=verify)
+            response = httpx.get(f"{server}/health", timeout=10, verify=s.verify)
             response.raise_for_status()
             remote = response.json().get("protocol_version")
             if remote == PROTOCOL_VERSION:
@@ -126,18 +120,18 @@ def check() -> int:
     return 0 if not problems else 1
 
 
-def _load_task_spec(task_name: str):
-    """CFL_TASK_SPEC=module:Class (constructed without arguments), else the reference spec."""
+def _load_task_spec(s: ClientSettings):
+    """task_spec = module:Class (constructed without arguments), else the reference spec."""
     from cfl.client.reference import ReferenceTaskSpec
 
-    spec_path = os.environ.get("CFL_TASK_SPEC")
+    spec_path = s.task_spec
     if not spec_path:
-        return ReferenceTaskSpec(task_name)
+        return ReferenceTaskSpec(s.task)
     module, _, cls = spec_path.partition(":")
     return getattr(importlib.import_module(module), cls)()
 
 
-def conformance(manifest_file: Path | None) -> int:
+def conformance(s: ClientSettings, manifest_file: Path | None) -> int:
     """Self-test for TaskSpec authors: every reference and forward test with its largest
     difference, then the checker's verdict on the full report."""
     import json
@@ -150,25 +144,25 @@ def conformance(manifest_file: Path | None) -> int:
     from cfl.core.manifest import manifest_id, reference_weights
     from cfl.core.serialization import sha256
 
-    task_name = _env("CFL_TASK")
-    spec = _load_task_spec(task_name)
+    s.require("task")
+    task_name = s.task
+    spec = _load_task_spec(s)
     if manifest_file is not None:
         data = manifest_file.read_bytes()
         source = str(manifest_file)
     else:
         from cfl.client.http import HttpTransport
 
-        token = Path(_env("CFL_TOKEN_FILE", "/run/secrets/cfl_token")).read_text().strip()
-        transport = HttpTransport(
-            _env("CFL_SERVER_URL"), token, verify=os.environ.get("CFL_CA_BUNDLE") or True
-        )
+        s.require("server_url", "client_id")
+        token = s.token_file.read_text().strip()
+        transport = HttpTransport(s.server_url, token, verify=s.verify)
         from cfl.protocol.messages import RegisterRequest
 
         # GET /conformance needs a registered client; registering again is harmless.
         transport.register(
             RegisterRequest(
-                client_id=_env("CFL_CLIENT_ID"),
-                client_version=os.environ.get("CFL_CLIENT_VERSION", "cfl-client/dev"),
+                client_id=s.client_id,
+                client_version=s.client_version,
             )
         )
         dataset = get_task(task_name).dataset
@@ -177,7 +171,7 @@ def conformance(manifest_file: Path | None) -> int:
             print(f"no running run uses {dataset}; pass --manifest FILE to test offline")
             return 1
         data, _ = transport.get_manifest(mine[0].manifest_version)
-        source = f"{_env('CFL_SERVER_URL')} ({mine[0].manifest_version})"
+        source = f"{s.server_url} ({mine[0].manifest_version})"
     manifest = json.loads(data)
     print(f"manifest {manifest_id(manifest)} from {source}")
     print(f"TaskSpec {type(spec).__module__}.{type(spec).__name__}")
@@ -259,8 +253,8 @@ def conformance(manifest_file: Path | None) -> int:
     report = build_report(
         manifest=manifest,
         manifest_sha256=sha256(data),
-        client_id=os.environ.get("CFL_CLIENT_ID", "self-test"),
-        client_version=os.environ.get("CFL_CLIENT_VERSION", "cfl-client/dev"),
+        client_id=s.client_id or "self-test",
+        client_version=s.client_version,
         preprocess=spec.preprocess,
         build_model=spec.build_model,
         contract=contract,
@@ -275,7 +269,7 @@ def conformance(manifest_file: Path | None) -> int:
     return 1
 
 
-def run(exit_after_final: bool = False) -> int:
+def run(s: ClientSettings, exit_after_final: bool = False) -> int:
     from cfl.client.http import GatewayHTTPError, HttpTransport
     from cfl.client.runtime import ClientRuntime, ConformanceFailed
 
@@ -283,25 +277,24 @@ def run(exit_after_final: bool = False) -> int:
     # a pending update stays on disk and is resent after the restart.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
-    task_name = _env("CFL_TASK")
-    token = Path(_env("CFL_TOKEN_FILE", "/run/secrets/cfl_token")).read_text().strip()
-    version = os.environ.get("CFL_CLIENT_VERSION", "cfl-client/dev")
-    transport = HttpTransport(
-        _env("CFL_SERVER_URL"),
-        token,
-        verify=os.environ.get("CFL_CA_BUNDLE") or True,
-        user_agent=version,
-    )
+    s.require("server_url", "client_id", "task")
+    try:
+        token = s.token_file.read_text().strip()
+    except OSError as exc:
+        print(f"error: token file {s.token_file}: {exc.strerror}", file=sys.stderr)
+        return 2
+    print(f"cfl-client settings: {s.describe()}", flush=True)
+    transport = HttpTransport(s.server_url, token, verify=s.verify, user_agent=s.client_version)
     runtime = ClientRuntime(
         transport=transport,
-        task=_load_task_spec(task_name),
-        client_id=_env("CFL_CLIENT_ID"),
-        client_version=version,
-        dataset=get_task(task_name).dataset,
-        partition_dir=Path(_env("CFL_PARTITION_DIR", "/data")),
-        state_dir=Path(_env("CFL_STATE_DIR", "/state")),
-        poll_interval_s=float(os.environ.get("CFL_POLL_INTERVAL", "3")),
-        seed=int(os.environ.get("CFL_SEED", "0")),
+        task=_load_task_spec(s),
+        client_id=s.client_id,
+        client_version=s.client_version,
+        dataset=get_task(s.task).dataset,
+        partition_dir=s.partition_dir,
+        state_dir=s.state_dir,
+        poll_interval_s=s.poll_interval,
+        seed=s.seed,
     )
     try:
         runtime.run(exit_after_final=exit_after_final)
@@ -321,19 +314,33 @@ def run(exit_after_final: bool = False) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m cfl.client",
+        prog="cfl-client",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("command", choices=["check", "conformance", "run"])
+    parser.add_argument("--config", type=Path, default=None, help="YAML settings file")
+    for name, option in OPTIONS.items():
+        parser.add_argument(
+            option.flag,
+            dest=name,
+            type=option.type,
+            default=None,
+            help=f"{option.help} [{option.env}]",
+        )
     parser.add_argument("--exit-after-final", action="store_true", help="with run: see above")
     parser.add_argument("--manifest", type=Path, default=None, help="with conformance: see above")
     args = parser.parse_args(argv)
-    if args.command == "check":
-        return check()
-    if args.command == "conformance":
-        return conformance(args.manifest)
-    return run(args.exit_after_final)
+    try:
+        settings = load_settings(args.config, {name: getattr(args, name) for name in OPTIONS})
+        if args.command == "check":
+            return check(settings)
+        if args.command == "conformance":
+            return conformance(settings, args.manifest)
+        return run(settings, args.exit_after_final)
+    except SettingsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

@@ -72,6 +72,19 @@ docker compose --env-file client.env run --rm client check   # setup + gateway r
 docker compose --env-file client.env up -d
 ```
 
+### Without Docker
+
+The same client runs directly with Python (e.g. on a team member's laptop or a cluster node): install the backend (`pip install -e backend`), copy `deploy/client/client.yaml.example` to `client.yaml`, fill it in and run
+
+```bash
+cfl-client check --config client.yaml
+cfl-client run --config client.yaml
+```
+
+Every setting can also be given as a command-line option or a `CFL_*` environment variable; precedence is option > environment > config file > default (`cfl-client --help` lists them). Relative paths in the config file are relative to the file. The token is only ever read from `token_file`, never passed as a value.
+
+### What the commands do
+
 `check` verifies the token file, the partition files, the task, the state directory and the TLS connection to the gateway, and exits non-zero on any problem. The partition is mounted read-only; the token is a Docker secret, never an environment variable or part of the image.
 
 `run` (the default command) is the shared client runtime (`backend/src/cfl/client/runtime.py`): it registers, passes the conformance check for its dataset (waiting until a run uses it), then polls for tasks, trains, uploads and, when a run it took part in has finished, downloads and verifies the final model into `/state/final/<run_id>/`. Every update is written to `/state` before it is uploaded and removed once the gateway has decided, so a site that crashes or loses its connection resends the same `update_id` after a restart and is counted once. Keep the `state` volume across restarts. Optional settings: `CFL_POLL_INTERVAL` (seconds, default 3), `CFL_SEED` (local training seed, default 0); `run --exit-after-final` stops after the final model of the latest run the site trained in (for demos).
