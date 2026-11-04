@@ -9,6 +9,7 @@ from cfl.coordinator.intake import UpdateIntake
 from cfl.coordinator.state_store import InMemoryStateStore
 from cfl.core.store import ModelStore
 from cfl.core.transport import Transport
+from cfl.db.state_store import PostgresStateStore
 from cfl.protocol import PROTOCOL_VERSION
 from cfl.protocol.messages import (
     RegisterRequest,
@@ -24,7 +25,7 @@ class InMemoryTransport(Transport):
         self,
         coordinator: Coordinator,
         intake: UpdateIntake,
-        state: InMemoryStateStore,
+        state: InMemoryStateStore | PostgresStateStore,
         models: ModelStore,
     ):
         self.coordinator = coordinator

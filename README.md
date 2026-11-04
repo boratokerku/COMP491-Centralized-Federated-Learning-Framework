@@ -52,6 +52,23 @@ cp deploy/.env.example deploy/.env   # then set the passwords
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
+Create the database schema (Alembic migrations in `backend/migrations`, tables defined in
+`backend/src/cfl/db/schema.py`):
+
+```bash
+cd backend
+export CFL_DATABASE_URL=postgresql+psycopg://cfl:<password>@127.0.0.1:5432/cfl
+alembic upgrade head
+```
+
+Run a federated training in local simulation mode (needs the partitions, see `data/README.md`).
+State is kept in memory by default; `--postgres` persists it in the database above:
+
+```bash
+python backend/scripts/run_simulation.py --config backend/configs/sim_tabular.yaml --rounds 5
+python backend/scripts/run_simulation.py --config backend/configs/sim_text.yaml --rounds 5 --postgres
+```
+
 ## Design specifications
 
 - [PostgreSQL schema and sequence-diagram DB mapping](planning/db-schema.md)

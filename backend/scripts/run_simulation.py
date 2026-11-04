@@ -15,7 +15,7 @@ from pathlib import Path
 
 from cfl.coordinator.config import load_run_config
 from cfl.coordinator.state import RoundState
-from cfl.coordinator.state_store import InMemoryStateStore, ParticipantStatus, RoundRecord
+from cfl.coordinator.state_store import ParticipantStatus, RoundRecord, StateStore
 from cfl.core.store import FileModelStore, InMemoryModelStore
 from cfl.simulation.runner import run_simulation
 
@@ -27,6 +27,11 @@ def main() -> int:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--rounds", type=int, default=None, help="override rounds.num_rounds")
     parser.add_argument("--store", type=Path, default=None, help="keep model files here")
+    parser.add_argument(
+        "--postgres",
+        action="store_true",
+        help="persist state in PostgreSQL (CFL_DATABASE_URL, schema from alembic upgrade head)",
+    )
     args = parser.parse_args()
 
     config = load_run_config(args.config if args.config.is_absolute() else REPO_ROOT / args.config)
@@ -36,7 +41,13 @@ def main() -> int:
         config = type(config).model_validate(raw)
     models = FileModelStore(args.store) if args.store else InMemoryModelStore()
 
-    def report(round_: RoundRecord, state: InMemoryStateStore) -> None:
+    state = None
+    if args.postgres:
+        from cfl.db.state_store import PostgresStateStore, engine_from_env
+
+        state = PostgresStateStore(engine_from_env())
+
+    def report(round_: RoundRecord, state: StateStore) -> None:
         values = {
             m.metric_name: m.value
             for m in state.metrics(round_.run_id)
@@ -55,7 +66,9 @@ def main() -> int:
             f"round={values['round_duration_ms']:.0f}ms"
         )
 
-    result = run_simulation(config, repo_root=REPO_ROOT, models=models, on_round_closed=report)
+    result = run_simulation(
+        config, repo_root=REPO_ROOT, models=models, state=state, on_round_closed=report
+    )
 
     run = result.run
     rounds = [result.state.get_round(run.run_id, i) for i in range(1, config.rounds.num_rounds + 1)]

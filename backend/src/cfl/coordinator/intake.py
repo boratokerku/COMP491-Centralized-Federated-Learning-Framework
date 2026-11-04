@@ -3,6 +3,7 @@
 The simulation calls this directly through the in-memory transport; the gateway applies the
 same rules on PostgreSQL. Checks, in order:
 
+0. update_id is a UUID (the client's idempotency key)  -> invalid_update_id
 1. Same update_id already accepted -> accepted again (idempotent retry, counted once). This
    comes first so a retry whose original upload was accepted but whose response was lost still
    gets "accepted" after the round has moved on.
@@ -15,6 +16,7 @@ same rules on PostgreSQL. Checks, in order:
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
 from datetime import datetime
 from enum import StrEnum
@@ -27,6 +29,7 @@ from cfl.protocol.messages import UpdateAck, UpdateMetadata
 
 
 class IntakeReason(StrEnum):
+    INVALID_UPDATE_ID = "invalid_update_id"
     DUPLICATE_IDEMPOTENT = "duplicate_idempotent"
     CHECKSUM_MISMATCH = "checksum_mismatch"
     UNKNOWN_ROUND = "unknown_round"
@@ -49,6 +52,11 @@ class UpdateIntake:
 
     def submit(self, meta: UpdateMetadata, weights: bytes) -> UpdateAck:
         now = self.clock()
+        try:
+            uuid.UUID(meta.update_id)
+        except ValueError:
+            self._event("UPDATE_REJECTED", meta, now, len(weights), IntakeReason.INVALID_UPDATE_ID)
+            return UpdateAck(accepted=False, reason=IntakeReason.INVALID_UPDATE_ID)
 
         previous = self.state.get_update(meta.update_id)
         if previous is not None and (previous.run_id, previous.round_id, previous.client_id) == (

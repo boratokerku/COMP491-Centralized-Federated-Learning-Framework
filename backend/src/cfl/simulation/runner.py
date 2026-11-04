@@ -10,8 +10,9 @@ from pathlib import Path
 from cfl.coordinator.config import RunConfig
 from cfl.coordinator.coordinator import REPO_ROOT, Coordinator, Step
 from cfl.coordinator.intake import UpdateIntake
-from cfl.coordinator.state_store import InMemoryStateStore, RoundRecord, RunRecord
+from cfl.coordinator.state_store import InMemoryStateStore, RoundRecord, RunRecord, StateStore
 from cfl.core.store import InMemoryModelStore, ModelStore
+from cfl.db.state_store import PostgresStateStore
 from cfl.simulation.client import SimulatedClient
 from cfl.simulation.transport import InMemoryTransport
 from cfl.tasks.registry import get_task
@@ -20,7 +21,7 @@ from cfl.tasks.registry import get_task
 @dataclass
 class SimulationResult:
     run: RunRecord
-    state: InMemoryStateStore
+    state: StateStore
     models: ModelStore
 
 
@@ -28,12 +29,13 @@ def run_simulation(
     config: RunConfig,
     repo_root: Path = REPO_ROOT,
     models: ModelStore | None = None,
-    on_round_closed: Callable[[RoundRecord, InMemoryStateStore], None] | None = None,
+    state: InMemoryStateStore | PostgresStateStore | None = None,
+    on_round_closed: Callable[[RoundRecord, StateStore], None] | None = None,
     max_steps: int = 100_000,
 ) -> SimulationResult:
     if config.run.mode != "simulation":
         raise ValueError("run_simulation needs run.mode = simulation")
-    state = InMemoryStateStore()
+    state = state if state is not None else InMemoryStateStore()
     models = models if models is not None else InMemoryModelStore()
     coordinator = Coordinator(state, models, repo_root=repo_root)
     intake = UpdateIntake(state, models, coordinator.clock)
