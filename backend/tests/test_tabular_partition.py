@@ -41,6 +41,7 @@ def test_same_seed_gives_identical_partitions():
     pd.testing.assert_frame_equal(a.test, b.test)
     for ca, cb in zip(a.clients, b.clients, strict=True):
         pd.testing.assert_frame_equal(ca.train, cb.train)
+        pd.testing.assert_frame_equal(ca.val, cb.val)
         pd.testing.assert_frame_equal(ca.test, cb.test)
 
 
@@ -53,27 +54,36 @@ def test_different_seed_gives_different_partitions():
 def test_splits_cover_all_rows_without_overlap():
     df = _frame()
     p = iid_partition(df, CONFIG, num_clients=4, seed=0)
-    parts = [p.test] + [c.train for c in p.clients] + [c.test for c in p.clients]
+    parts = [p.test] + [getattr(c, s) for c in p.clients for s in ("train", "val", "test")]
     all_ids = [i for part in parts for i in part["row_id"]]
     assert len(all_ids) == len(set(all_ids)) == len(df)
     assert len(p.test) == 200
-    assert all(len(c.test) > 0 for c in p.clients)
+    for c in p.clients:  # 200 rows per client: 70% train, 10% val, 20% test
+        assert (len(c.train), len(c.val), len(c.test)) == (140, 20, 40)
 
 
 def test_class_ratio_is_kept_in_every_split():
     p = iid_partition(_frame(), CONFIG, num_clients=4, seed=0)
-    for part in [p.test] + [c.train for c in p.clients] + [c.test for c in p.clients]:
+    for part in [p.test] + [getattr(c, s) for c in p.clients for s in ("train", "val", "test")]:
         assert (part["y"] == "yes").mean() == pytest.approx(0.2, abs=0.03)
 
 
 def test_single_client():
     p = iid_partition(_frame(), CONFIG, num_clients=1, seed=0)
     assert len(p.clients) == 1
-    assert len(p.clients[0].train) + len(p.clients[0].test) == 800
+    c = p.clients[0]
+    assert len(c.train) + len(c.val) + len(c.test) == 800
 
 
 @pytest.mark.parametrize(
-    "kwargs", [{"num_clients": 0}, {"test_size": 0.0}, {"local_test_size": 1.0}]
+    "kwargs",
+    [
+        {"num_clients": 0},
+        {"test_size": 0.0},
+        {"local_test_size": 1.0},
+        {"local_val_size": 0.0},
+        {"local_val_size": 0.5, "local_test_size": 0.5},
+    ],
 )
 def test_invalid_arguments(kwargs):
     args = {"num_clients": 2, "seed": 0} | kwargs
@@ -89,8 +99,11 @@ def test_write_and_rewrite(tmp_path):
     summary = json.loads((out / "summary.json").read_text())
     assert summary["seed"] == 0
     assert sorted(summary["clients"]) == ["client_0", "client_1", "client_2"]
-    train = pd.read_csv(out / "client_0" / "train.csv", sep=";")
-    assert list(train.columns) == ["row_id", "x", "y"]
+    assert sorted(summary["clients"]["client_0"]) == ["test", "train", "val"]
+    assert summary["preprocessing_version"] == "1.0"
+    for split in ("train", "val", "test"):
+        part = pd.read_csv(out / "client_0" / f"{split}.csv", sep=";")
+        assert list(part.columns) == ["row_id", "x", "y"]
 
     # Rewriting with fewer clients removes the stale client folder.
     p2 = iid_partition(_frame(), CONFIG, num_clients=2, seed=0)
