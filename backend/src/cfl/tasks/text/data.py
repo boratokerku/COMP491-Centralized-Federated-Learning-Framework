@@ -7,6 +7,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
+
+from cfl.tasks.text.tokenizer import encode_batch
 
 DATASET_NAME = "sms_spam"
 RAW_FILE = "data/text/raw/SMSSpamCollection"  # relative to the repository root
@@ -49,3 +52,10 @@ def encode_labels(df: pd.DataFrame) -> np.ndarray:
     if unexpected:
         raise ValueError(f"label values not in {{{POSITIVE!r}, {NEGATIVE!r}}}: {unexpected}")
     return (values == POSITIVE).astype(np.int64)
+
+
+def load_split(path: str | Path) -> tuple[torch.Tensor, torch.Tensor]:
+    """(token ids int64 [N, MAX_LEN], labels int64 [N]) for one CSV written by the partitioner."""
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    ids = encode_batch(df[TEXT_COLUMN].tolist())
+    return torch.from_numpy(ids), torch.from_numpy(encode_labels(df))
