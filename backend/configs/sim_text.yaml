@@ -1,0 +1,29 @@
+# Run config for local simulation on the text dataset (UCI SMS Spam Collection).
+# Validated by cfl.coordinator.config.RunConfig; unknown keys are rejected.
+run:
+  name: sim-text-fedavg
+  seed: 42
+  mode: simulation          # simulation | distributed
+
+task:
+  name: text                # tabular | text
+  data_dir: data/text       # relative to the repository root; raw data is never committed
+  num_clients: 4
+  partition: iid
+
+strategy:
+  name: fedavg              # fedavg | fedprox
+  # mu: 0.01                # required for fedprox, not allowed for fedavg
+
+rounds:
+  num_rounds: 20
+  client_fraction: 1.0      # random subset of eligible clients per round (seeded)
+  min_participants: 3
+  round_deadline_s: 120
+  max_num_samples: 2000     # reject updates that report more samples than any client holds
+
+client:
+  local_epochs: 1
+  batch_size: 64
+  learning_rate: 0.01
+  class_weights: [1.0, 6.9] # ~ ham / spam after de-duplication (12.6% spam); fixed for all clients

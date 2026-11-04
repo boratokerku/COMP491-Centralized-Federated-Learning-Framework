@@ -255,6 +255,16 @@ This inventory follows all database arrows in `diagrams/sequence/01_registration
 | Attempted/completed rounds and failure reasons | `rounds.state`, `rounds.failure_reason`, `events` |
 | Final model location, format, version, checksum and size | `runs.final_model_*` fields |
 
+## Implementation notes
+
+The schema is implemented in `backend/src/cfl/db/schema.py` and created by the Alembic migration `backend/migrations/versions/0001_initial_schema.py`. Additions to the design above, to be confirmed by the schema owner:
+
+- `runs.config_sha256`, `runs.manifest_sha256` and `runs.model_fingerprint` (`CHAR(64)`, **NOT NULL**): the run pins the exact config, served manifest artifact and model parameter contract for audit and resume.
+- `rounds`: `CHECK (state <> 'FAILED' OR failure_reason IS NOT NULL)` enforces "required when FAILED".
+- `events.message_type`, `reason_code` and `message_bytes` are filled from the event details (`message_type`, `reason_code`, `bytes`) when present.
+
+The coordinator reads and writes these tables only through `cfl.db.state_store.PostgresStateStore` (interface: `cfl.coordinator.state_store.StateStore`). Round transitions update the row only when `state_version` is unchanged (`UPDATE ... WHERE state_version = :expected`), so a stale writer fails instead of overwriting newer state.
+
 ## Indexes and retention notes
 
 In addition to primary/unique constraints, create indexes for active-run lookup (`runs(status)`), latest round lookup (`rounds(run_id, round_id DESC)`), pending deadline scans (`rounds(state, deadline_at)`), client update history (`updates(client_id, received_at DESC)`), and the event/metric indexes listed above. Keep run artifacts and audit records for reproducibility; any retention/deletion policy must be decided with the advisors before real organization data is used.

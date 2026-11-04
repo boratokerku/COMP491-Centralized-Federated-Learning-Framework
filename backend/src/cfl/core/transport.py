@@ -31,3 +31,8 @@ class Transport(ABC):
 
     @abstractmethod
     def upload_update(self, metadata: UpdateMetadata, weights: bytes) -> UpdateAck: ...
+
+    @abstractmethod
+    def download_final_artifact(self, run_id: str) -> tuple[dict[str, bytes], str] | None:
+        """The final model artifact files and the server-published SHA-256 of model.onnx, or
+        None while the run is not completed (GET /model/{run_id}/final)."""
