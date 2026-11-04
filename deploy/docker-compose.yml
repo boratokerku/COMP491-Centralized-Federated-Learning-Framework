@@ -21,6 +21,9 @@ x-server: &server
   restart: unless-stopped
   environment:
     CFL_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-cfl}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-cfl}
+    CFL_MODELS_DIR: /models
+    # Managed client versions the gateway accepts at registration (comma-separated patterns)
+    CFL_ALLOWED_CLIENT_VERSIONS: ${CFL_ALLOWED_CLIENT_VERSIONS:-}
 
 services:
   postgres:

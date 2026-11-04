@@ -122,6 +122,7 @@ class MetricRecord:
     recorded_at: datetime
     round_id: int | None = None
     client_id: str | None = None
+    message_type: str | None = None  # communication metrics: register, model_download, ...
 
 
 @dataclass(frozen=True)

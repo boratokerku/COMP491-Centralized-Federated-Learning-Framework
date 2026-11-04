@@ -152,6 +152,82 @@ class ClientRegistry:
                 raise KeyError(client_id)
             conn.execute(insert(t.events).values(**_event(event_type, client_id, now)))
 
+    # -- client protocol ----------------------------------------------------------------------
+    def register(self, client_id: str, client_version: str, protocol_version: str) -> None:
+        now = self.clock()
+        with self.engine.begin() as conn:
+            conn.execute(
+                update(t.clients)
+                .where(t.clients.c.client_id == client_id)
+                .values(
+                    status=ClientStatus.REGISTERED.value,
+                    client_version=client_version,
+                    protocol_version=protocol_version,
+                    registered_at=now,
+                    last_seen_at=now,
+                )
+            )
+            conn.execute(
+                insert(t.events).values(
+                    **_event(
+                        "CLIENT_REGISTERED",
+                        client_id,
+                        now,
+                        client_version=client_version,
+                        protocol_version=protocol_version,
+                        message_type="register",
+                    ),
+                    message_type="register",
+                    status="accepted",
+                )
+            )
+
+    def record_conformance(
+        self,
+        *,
+        report_id: str,
+        client_id: str,
+        manifest_version: str,
+        client_version: str,
+        protocol_version: str,
+        passed: bool,
+        reason_code: str | None,
+        payload: dict,
+    ) -> datetime:
+        """Append the report and the server's decision; the coordinator selects only clients
+        whose latest report for the run's manifest passed."""
+        now = self.clock()
+        status = "PASSED" if passed else "FAILED"
+        with self.engine.begin() as conn:
+            conn.execute(
+                insert(t.conformance_reports).values(
+                    report_id=report_id,
+                    client_id=client_id,
+                    manifest_version=manifest_version,
+                    client_version=client_version,
+                    protocol_version=protocol_version,
+                    status=status,
+                    reason_code=reason_code,
+                    report_payload=payload,
+                    checked_at=now,
+                )
+            )
+            conn.execute(
+                insert(t.events).values(
+                    **_event(
+                        "CONFORMANCE_EVALUATED",
+                        client_id,
+                        now,
+                        report_id=report_id,
+                        manifest_version=manifest_version,
+                    ),
+                    message_type="conformance",
+                    status=status.lower(),
+                    reason_code=reason_code,
+                )
+            )
+        return now
+
     # -- every request ------------------------------------------------------------------------
     def authenticate(self, token: str) -> ClientRecord:
         """The client a bearer token belongs to. Raises AuthError (401 unknown token, 403

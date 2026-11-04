@@ -74,11 +74,11 @@ The JSON Schema below validates the manifest, not the submitted report. The repo
 
 ```json
 {
-  "manifest_version": "1.0.0",
+  "manifest_version": "bank_marketing@1.0.0",
   "manifest_sha256": "<64 lowercase hex characters>",
   "client_id": "client-0",
   "client_version": "independent-client/0.1.0",
-  "protocol_version": "1.0",
+  "protocol_version": "0.1",
   "declared_model": {
     "architecture_id": "bank_mlp",
     "architecture_version": "1.0.0",
@@ -88,10 +88,18 @@ The JSON Schema below validates the manifest, not the submitted report. The repo
     ]
   },
   "declared_input": {
-    "feature_names": ["age", "campaign"],
-    "feature_types": ["numeric", "numeric"],
-    "feature_units": ["years", "contacts"],
-    "preprocessing_version": "1.0"
+    "feature_names": ["age", "campaign", "job"],
+    "feature_types": ["numeric", "numeric", "categorical"],
+    "feature_units": ["years", "contacts", "category"],
+    "preprocessing_version": "1.0",
+    "categories": {"job": ["admin.", "blue-collar", "..."]},
+    "tokenizer": null
+  },
+  "declared_label": {
+    "column": "y",
+    "positive_value": "yes",
+    "negative_value": "no",
+    "encoded_values": [0, 1]
   },
   "client_passed": true,
   "checks": [{"code": "reference_output_match", "passed": true}],
@@ -105,7 +113,7 @@ The JSON Schema below validates the manifest, not the submitted report. The repo
 }
 ```
 
-The abbreviated feature list above is illustrative; real reports include all manifest features in order. The gateway's stored `status` and `reason_code` are authoritative. Do not accept client-supplied status as the final decision.
+The abbreviated feature list above is illustrative; real reports include all manifest features in order. `manifest_version` is the manifest identity `"<dataset>@<version>"`. `feature_units` holds the numeric unit, `"category"` for categorical and `"text"` for text features; `categories` lists every categorical feature's vocabulary in manifest order; text tasks send the manifest's `preprocessing.tokenizer` object as `tokenizer`. The gateway re-checks the report with `cfl.conformance.checker` in the order above, and `cfl.conformance.report.build_report` builds a conforming report from a site's own pre-processing and model. The gateway's stored `status` and `reason_code` are authoritative. Do not accept client-supplied status as the final decision.
 
 ## Implementation acceptance criteria
 

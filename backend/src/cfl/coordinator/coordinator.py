@@ -53,6 +53,7 @@ from cfl.core.artifact import (
 )
 from cfl.core.contract import initial_weights
 from cfl.core.evaluation import HeldOutEvaluator
+from cfl.core.manifest import manifest_id
 from cfl.core.serialization import bytes_to_state_dict, sha256, state_dict_to_bytes
 from cfl.core.store import ModelStore
 from cfl.core.strategy import build_strategy
@@ -193,7 +194,7 @@ class Coordinator:
             config=config.model_dump(),
             config_sha256=config.fingerprint(),
             protocol_version=PROTOCOL_VERSION,
-            manifest_version=manifest["manifest_version"],
+            manifest_version=manifest_id(manifest),
             manifest_sha256=sha256(manifest_bytes),
             preprocessing_version=task.preprocessing_version,
             model_architecture=contract.architecture_id,
