@@ -20,7 +20,7 @@ Who owns what, and the contracts between the parts, so that each person can work
 
 ## 2. `TaskSpec`: what each client team implements
 
-Defined in `backend/src/cfl/core/task.py`. The shared client runtime (`backend/src/cfl/client/runtime.py`) calls it; everything else (registration, conformance report, polling, download, upload, retries, crash-safe resending, final model) is the runtime's job. Reference implementation for both tasks: `backend/src/cfl/client/reference.py` (`ReferenceTaskSpec`), used when a site sets no `CFL_TASK_SPEC`; own implementations are selected with `CFL_TASK_SPEC=module:Class` and constructed without arguments.
+Defined in `backend/src/cfl/core/task.py`. The shared client runtime (`backend/src/cfl/client/runtime.py`) calls it; everything else (registration, conformance report, polling, download, upload, retries, crash-safe resending, final model) is the runtime's job. Reference implementation for both tasks: `backend/src/cfl/client/reference.py` (`ReferenceTaskSpec`), used when a site sets no `CFL_TASK_SPEC`; own implementations are selected with `CFL_TASK_SPEC=module:Class` and constructed without arguments. `python -m cfl.client conformance --manifest <file>` checks an implementation against a manifest offline (deploy/README.md); the conformance report itself is built and submitted by the runtime.
 
 | Method | Contract |
 |---|---|

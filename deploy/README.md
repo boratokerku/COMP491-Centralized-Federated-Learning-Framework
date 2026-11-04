@@ -96,7 +96,15 @@ University clusters that only allow Apptainer can build from the same archive: `
 
 ## Where each team member plugs in
 
-- **Client code (Merve: text, Enes: tabular).** Managed-code mode means the training code is part of the image, not mounted at run time. Implement `TaskSpec` (`backend/src/cfl/core/task.py`) in the repository, e.g. `backend/src/cfl/tasks/text/spec.py`; the next image build contains it. Sites select it with `CFL_TASK_SPEC=cfl.tasks.text.spec:SmsTaskSpec` (the class is constructed without arguments), and `check` confirms it imports. Without `CFL_TASK_SPEC` the image uses `cfl.client.reference.ReferenceTaskSpec`, the reference behaviour and a starting point for your own implementation. New Python dependencies go into `backend/pyproject.toml`.
+- **Client code (Merve: text, Enes: tabular).** Managed-code mode means the training code is part of the image, not mounted at run time. Implement `TaskSpec` (`backend/src/cfl/core/task.py`) in the repository, e.g. `backend/src/cfl/tasks/text/spec.py`; the next image build contains it. Sites select it with `CFL_TASK_SPEC=cfl.tasks.text.spec:SmsTaskSpec` (the class is constructed without arguments), and `check` confirms it imports. While developing, test it against the manifest without any server:
+
+  ```bash
+  cd backend
+  CFL_TASK=text CFL_TASK_SPEC=cfl.tasks.text.spec:SmsTaskSpec \
+      python -m cfl.client conformance --manifest ../planning/examples/sms_spam_manifest.json
+  ```
+
+  It runs every reference test (your `preprocess` on the synthetic raw inputs) and forward test (your model under the reference weights), checks the parameter names and shapes, shows the largest difference and where it is, and prints the decision the gateway would take; exit code 0 means conformant. Without `--manifest` it fetches the manifest of the running run from the gateway (same settings as `check`) and still submits nothing. The runtime builds and submits the real report itself (`cfl.conformance.report.build_report`), so nothing else is needed from you. Without `CFL_TASK_SPEC` the image uses `cfl.client.reference.ReferenceTaskSpec`, the reference behaviour and a starting point for your own implementation. New Python dependencies go into `backend/pyproject.toml`.
 - **Independent-implementation client (Enes).** Not a `cfl-client` image: it talks to the gateway's REST API directly and only has to follow `planning/api-spec.md` and the conformance report format.
 - **Website (Hilal).** Add `frontend/Dockerfile` that serves the Next.js app on port 3000 and start the stack with `--profile web`. It receives `DATABASE_URL` (read-only role `cfl_web`), `REPORTS_DIR=/models` (read-only) and `PUBLIC_URL`. Grafana dashboards go into `deploy/grafana/provisioning/dashboards/` (provisioned on start).
 

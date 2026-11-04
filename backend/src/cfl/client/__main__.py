@@ -1,8 +1,11 @@
 """Managed-code client entrypoint (the cfl-client image): `python -m cfl.client <command>`.
 
-    check  verify this site's setup: token, partition files, task, state directory, and that
-           the gateway is reachable over HTTPS with a matching protocol version
-    run    take part in training runs (the client runtime; see planning/interfaces.md)
+    check        verify this site's setup: token, partition files, task, state directory,
+                 and that the gateway is reachable over HTTPS with a matching protocol version
+    conformance  run the manifest's reference and forward tests against this site's TaskSpec
+                 and show what the gateway would decide, without submitting anything;
+                 --manifest FILE works offline (e.g. planning/examples/*_manifest.json)
+    run          take part in training runs (the client runtime; see planning/interfaces.md)
 
 Configuration comes from the environment, so the same image runs at every site:
 
@@ -134,6 +137,144 @@ def _load_task_spec(task_name: str):
     return getattr(importlib.import_module(module), cls)()
 
 
+def conformance(manifest_file: Path | None) -> int:
+    """Self-test for TaskSpec authors: every reference and forward test with its largest
+    difference, then the checker's verdict on the full report."""
+    import json
+
+    import torch
+
+    from cfl.conformance.checker import check_report
+    from cfl.conformance.report import build_report
+    from cfl.core.contract import ModelContract
+    from cfl.core.manifest import manifest_id, reference_weights
+    from cfl.core.serialization import sha256
+
+    task_name = _env("CFL_TASK")
+    spec = _load_task_spec(task_name)
+    if manifest_file is not None:
+        data = manifest_file.read_bytes()
+        source = str(manifest_file)
+    else:
+        from cfl.client.http import HttpTransport
+
+        token = Path(_env("CFL_TOKEN_FILE", "/run/secrets/cfl_token")).read_text().strip()
+        transport = HttpTransport(
+            _env("CFL_SERVER_URL"), token, verify=os.environ.get("CFL_CA_BUNDLE") or True
+        )
+        from cfl.protocol.messages import RegisterRequest
+
+        # GET /conformance needs a registered client; registering again is harmless.
+        transport.register(
+            RegisterRequest(
+                client_id=_env("CFL_CLIENT_ID"),
+                client_version=os.environ.get("CFL_CLIENT_VERSION", "cfl-client/dev"),
+            )
+        )
+        dataset = get_task(task_name).dataset
+        mine = [m for m in transport.list_manifests() if m.dataset == dataset]
+        if not mine:
+            print(f"no running run uses {dataset}; pass --manifest FILE to test offline")
+            return 1
+        data, _ = transport.get_manifest(mine[0].manifest_version)
+        source = f"{_env('CFL_SERVER_URL')} ({mine[0].manifest_version})"
+    manifest = json.loads(data)
+    print(f"manifest {manifest_id(manifest)} from {source}")
+    print(f"TaskSpec {type(spec).__module__}.{type(spec).__name__}")
+
+    failures = 0
+    for test in manifest["reference_tests"]:
+        try:
+            got = list(spec.preprocess(test["synthetic_raw_input"]))
+        except Exception as exc:  # show the author's exception, not a traceback
+            print(f"  FAIL  preprocess {test['test_id']}: {type(exc).__name__}: {exc}")
+            failures += 1
+            continue
+        want = test["expected_model_input"]
+        if len(got) != len(want):
+            print(f"  FAIL  preprocess {test['test_id']}: {len(got)} values, expected {len(want)}")
+            failures += 1
+            continue
+        diffs = [abs(a - b) for a, b in zip(want, got, strict=True)]
+        worst = max(range(len(diffs)), key=diffs.__getitem__)
+        ok = diffs[worst] <= manifest["validation"]["reference_atol"]
+        failures += not ok
+        names = manifest["input_schema"]["model_input"]["feature_names"]
+        where = (
+            "" if ok else f" (worst at {names[worst]}: expected {want[worst]}, got {got[worst]})"
+        )
+        print(
+            f"  {'ok  ' if ok else 'FAIL'}  preprocess {test['test_id']}: "
+            f"max diff {diffs[worst]:.2e}{where}"
+        )
+
+    model = manifest["model"]
+    contract = ModelContract.from_model(
+        spec.build_model(), model["architecture_id"], model["architecture_version"]
+    )
+    dtype = (
+        torch.int64
+        if manifest["input_schema"]["model_input"]["dtype"] == "int64"
+        else (torch.float32)
+    )
+    expected_params = [(p["name"], list(p["shape"]), p["dtype"]) for p in model["parameters"]]
+    own_params = [(p.name, list(p.shape), p.dtype) for p in contract.params]
+    if own_params == expected_params:
+        print(f"  ok    model parameters: {len(own_params)} match the manifest")
+    else:
+        failures += 1
+        wrong = next(
+            (
+                i
+                for i, (a, b) in enumerate(zip(expected_params, own_params, strict=False))
+                if a != b
+            ),
+            min(len(expected_params), len(own_params)),
+        )
+        print(
+            f"  FAIL  model parameters: first difference at #{wrong}: expected "
+            f"{expected_params[wrong] if wrong < len(expected_params) else None}, got "
+            f"{own_params[wrong] if wrong < len(own_params) else None}"
+        )
+    weights = reference_weights(contract)
+    for test in manifest["forward_reference_tests"]:
+        net = spec.build_model()
+        try:
+            net.load_state_dict(weights)
+        except RuntimeError as exc:
+            print(f"  FAIL  forward {test['test_id']}: weights do not fit the model: {exc}")
+            failures += 1
+            break
+        net.eval()
+        with torch.no_grad():
+            got = net(torch.tensor([test["model_input"]], dtype=dtype))[0].tolist()
+        diff = max(abs(a - b) for a, b in zip(test["expected_logits"], got, strict=False))
+        ok = (
+            len(got) == len(test["expected_logits"])
+            and diff <= manifest["validation"]["forward_atol"]
+        )
+        failures += not ok
+        print(f"  {'ok  ' if ok else 'FAIL'}  forward {test['test_id']}: max diff {diff:.2e}")
+
+    report = build_report(
+        manifest=manifest,
+        manifest_sha256=sha256(data),
+        client_id=os.environ.get("CFL_CLIENT_ID", "self-test"),
+        client_version=os.environ.get("CFL_CLIENT_VERSION", "cfl-client/dev"),
+        preprocess=spec.preprocess,
+        build_model=spec.build_model,
+        contract=contract,
+    )
+    result = check_report(manifest, sha256(data), report)
+    if result.passed:
+        print("conformant: the gateway would accept this report")
+        return 0
+    print(f"NOT conformant: {result.reason_code}: {result.message}")
+    if result.details:
+        print(f"  details: {json.dumps(result.details, default=str)[:400]}")
+    return 1
+
+
 def run(exit_after_final: bool = False) -> int:
     from cfl.client.http import GatewayHTTPError, HttpTransport
     from cfl.client.runtime import ClientRuntime, ConformanceFailed
@@ -184,10 +325,15 @@ def main(argv: list[str] | None = None) -> int:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("command", choices=["check", "run"])
+    parser.add_argument("command", choices=["check", "conformance", "run"])
     parser.add_argument("--exit-after-final", action="store_true", help="with run: see above")
+    parser.add_argument("--manifest", type=Path, default=None, help="with conformance: see above")
     args = parser.parse_args(argv)
-    return check() if args.command == "check" else run(args.exit_after_final)
+    if args.command == "check":
+        return check()
+    if args.command == "conformance":
+        return conformance(args.manifest)
+    return run(args.exit_after_final)
 
 
 if __name__ == "__main__":
