@@ -1,7 +1,7 @@
 """Create seeded IID client partitions for a tabular dataset (proposal T1.4 / D1.5).
 
 Output (gitignored), default data/tabular/partitions/<dataset>/:
-    client_<i>/train.csv, client_<i>/test.csv   one folder per simulated client site
+    client_<i>/train.csv, val.csv, test.csv     one folder per simulated client site
     test.csv                                    held-out set for experiments
     summary.json                                settings and per-split class balance
 
@@ -34,6 +34,7 @@ def main() -> int:
     parser.add_argument("--num-clients", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--test-size", type=float, default=0.2, help="held-out share")
+    parser.add_argument("--local-val-size", type=float, default=0.1, help="per-client share")
     parser.add_argument("--local-test-size", type=float, default=0.2, help="per-client share")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
@@ -44,6 +45,7 @@ def main() -> int:
         "seed": args.seed,
         "num_clients": args.num_clients,
         "test_size": args.test_size,
+        "local_val_size": args.local_val_size,
         "local_test_size": args.local_test_size,
     }
     partitioning = iid_partition(
@@ -52,6 +54,7 @@ def main() -> int:
         num_clients=args.num_clients,
         seed=args.seed,
         test_size=args.test_size,
+        local_val_size=args.local_val_size,
         local_test_size=args.local_test_size,
     )
     summary = summarize(partitioning, config, **settings)

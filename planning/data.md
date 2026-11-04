@@ -66,23 +66,65 @@ Reproduce with: `python backend/scripts/eda_bank_marketing.py`
 ## Client partitions (proposal T1.4 / D1.5)
 
 Reproduce with: `python backend/scripts/partition_tabular.py --num-clients 4 --seed 42`
-(code: `backend/src/cfl/tasks/tabular/partition.py`).
+(code: shared partitioner `backend/src/cfl/tasks/partition.py`, config wrapper `backend/src/cfl/tasks/tabular/partition.py`).
 
 - The rows are shuffled with the seed first (the file is ordered by date).
 - A **stratified 20% test set** is held out for experiments (server-side evaluation and baselines). It is never part of any client's data.
 - The remaining 80% is split into **4 IID, label-stratified** client partitions.
-- Each client partition is split again into **train (80%) and a local test split (20%)**, used for federated evaluation.
-- Files are written to `data/tabular/partitions/bank_marketing/` (gitignored): `client_<i>/train.csv`, `client_<i>/test.csv`, `test.csv` and `summary.json`.
+- Each client partition is split again into **train (70%), val (10%) and test (20%)**, all stratified:
+  - `train`: local training.
+  - `val`: per-round federated evaluation of the received global model and local early stopping / tuning.
+  - `test`: final per-client metrics; not used for any decision during training.
+- Files are written to `data/tabular/partitions/bank_marketing/` (gitignored): `client_<i>/train.csv`, `client_<i>/val.csv`, `client_<i>/test.csv`, `test.csv` and `summary.json`.
 - The same seed always produces the same partitions (covered by `backend/tests/test_tabular_partition.py`).
 - The partitions hold raw rows. Pre-processing runs on each client, following `backend/configs/datasets/bank_marketing.yaml`.
 - Each client folder is copied only to its own client machine and mounted into the client container. Raw data is never sent to the gateway or the coordinator.
 
 | split | rows | positive (yes) | ratio |
 |---|---|---|---|
-| client_0 train / local test | 6,590 / 1,648 | 742 / 186 | 0.1126 / 0.1129 |
-| client_1 train / local test | 6,590 / 1,648 | 742 / 186 | 0.1126 / 0.1129 |
-| client_2 train / local test | 6,589 / 1,648 | 742 / 186 | 0.1126 / 0.1129 |
-| client_3 train / local test | 6,589 / 1,648 | 742 / 186 | 0.1126 / 0.1129 |
+| client_0 train / val / test | 5,766 / 824 / 1,648 | 649 / 93 / 186 | 0.1126 / 0.1129 / 0.1129 |
+| client_1 train / val / test | 5,766 / 824 / 1,648 | 649 / 93 / 186 | 0.1126 / 0.1129 / 0.1129 |
+| client_2 train / val / test | 5,765 / 824 / 1,648 | 649 / 93 / 186 | 0.1126 / 0.1129 / 0.1129 |
+| client_3 train / val / test | 5,765 / 824 / 1,648 | 649 / 93 / 186 | 0.1126 / 0.1129 / 0.1129 |
 | held-out test | 8,238 | 928 | 0.1126 |
 
 A non-IID partition (label/feature skew) is optional (T7.2) and will be added later.
+
+## Text dataset: UCI SMS Spam Collection
+
+| Field | Value |
+|---|---|
+| Source | https://archive.ics.uci.edu/dataset/228/sms+spam+collection |
+| License | CC BY 4.0 |
+| Download date | 2026-11-04 |
+| File used | `SMSSpamCollection` from `sms+spam+collection.zip` (one message per line: `<ham\|spam>\t<text>`, no header, no quoting) |
+| SHA-256 (zip) | `1587ea43e58e82b14ff1f5425c88e17f8496bfcdb67a583dbff9eefaf9963ce3` |
+| SHA-256 (file) | `7d039a24a6083ed9ef0f806ebad56bbb976e3aeb8de05669173bfdc4996c239d` |
+| Local path | `data/text/raw/SMSSpamCollection` (gitignored) |
+| Dataset citation | Almeida, T. & Hidalgo, J. (2011). SMS Spam Collection [Dataset]. UCI ML Repository. https://doi.org/10.24432/C5CC84 |
+
+Download (from the repository root; the data is never committed):
+```bash
+python backend/scripts/download_sms_spam.py
+```
+
+- **Samples:** 5,574 messages; ham 4,827 (86.6%), spam 747 (13.4%). Longest message: 910 characters.
+- **Duplicates removed:** 403 messages are exact copies of an earlier one (mostly spam templates); no text appears with both labels. Without de-duplication the same message could land in a client's train split and in a test split and inflate results. After de-duplication: **5,171 messages**, ham 4,518, spam 653 (12.6%).
+- Pre-processing is the hashing tokenizer in `backend/src/cfl/tasks/text/tokenizer.py` (contract: `planning/examples/sms_spam_manifest.json`). Nothing is fitted on data, so no vocabulary has to be shared.
+
+### Client partitions
+
+Reproduce with: `python backend/scripts/partition_text.py --num-clients 4 --seed 42`
+(code: `backend/src/cfl/tasks/text/data.py` and the shared partitioner `backend/src/cfl/tasks/partition.py`).
+
+Same scheme as the tabular dataset, applied after de-duplication: stratified 20% held-out test set, the rest split into 4 IID label-stratified clients, each split into train (70%) / val (10%) / test (20%). Files go to `data/text/partitions/sms_spam/` (gitignored) as CSV with `label,text` columns.
+
+| split | rows | positive (spam) | ratio |
+|---|---|---|---|
+| client_0 train / val / test | 723 / 104 / 207 | 91 / 13 / 26 | 0.1259 / 0.1250 / 0.1256 |
+| client_1 train / val / test | 723 / 104 / 207 | 91 / 13 / 26 | 0.1259 / 0.1250 / 0.1256 |
+| client_2 train / val / test | 723 / 104 / 207 | 92 / 13 / 26 | 0.1272 / 0.1250 / 0.1256 |
+| client_3 train / val / test | 723 / 104 / 207 | 92 / 13 / 26 | 0.1272 / 0.1250 / 0.1256 |
+| held-out test | 1,035 | 131 | 0.1266 |
+
+The dataset is small: each client's val split holds only 13 spam messages, so per-client val metrics are noisy. Report per-client results with that in mind, and prefer the held-out test set for comparisons between runs.
