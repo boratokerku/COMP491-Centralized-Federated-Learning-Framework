@@ -14,13 +14,24 @@ import random
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
+from pathlib import Path
+
+import torch
 
 from cfl import __version__
-from cfl.coordinator.aggregator import global_model_key
+from cfl.coordinator.aggregator import (
+    AggregationResult,
+    Aggregator,
+    RoundInput,
+    UpdateRecord,
+    global_model_key,
+)
 from cfl.coordinator.config import RunConfig
 from cfl.coordinator.state import RoundState, is_terminal
 from cfl.coordinator.state_store import (
     EventRecord,
+    MetricRecord,
     ParticipantRecord,
     ParticipantStatus,
     RoundRecord,
@@ -29,6 +40,7 @@ from cfl.coordinator.state_store import (
     StateStore,
 )
 from cfl.core.contract import initial_weights
+from cfl.core.evaluation import HeldOutEvaluator
 from cfl.core.serialization import sha256, state_dict_to_bytes
 from cfl.core.store import ModelStore
 from cfl.core.strategy import build_strategy
@@ -37,6 +49,38 @@ from cfl.protocol.messages import TaskAssignment
 from cfl.tasks.registry import get_task
 
 Clock = Callable[[], datetime]
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+class Step(StrEnum):
+    """What one call of Coordinator.step() did."""
+
+    OPENED = "opened"  # a new round is collecting
+    WAITING_FOR_CLIENTS = "waiting_for_clients"  # too few eligible clients to open a round
+    COLLECTING = "collecting"  # round open, waiting for updates or the deadline
+    DONE = "done"  # round aggregated, global model advanced
+    FAILED = "failed"  # round failed (quorum, aggregation or evaluation), model unchanged
+    COMPLETED = "completed"  # all rounds attempted, run finished
+    IDLE = "idle"  # run is not running
+
+
+def _metric_rows(
+    run_id: str, round_id: int, values: dict[str, float], at: datetime, client_id=None
+) -> list[MetricRecord]:
+    """Seconds become milliseconds; units follow the `metrics` table conventions."""
+    rows = []
+    for name, value in values.items():
+        if name.endswith("_s"):
+            name, value, unit = f"{name[:-2]}_ms", value * 1000.0, "ms"
+        elif name.endswith("bytes") or name.endswith("_read"):
+            unit = "bytes"
+        elif name.startswith(("updates_", "total_")):
+            unit = "count"
+        else:
+            unit = "value"
+        rows.append(MetricRecord(run_id, name, float(value), unit, at, round_id, client_id))
+    return rows
 
 
 def _utcnow() -> datetime:
@@ -74,10 +118,18 @@ def round_config(config: RunConfig) -> dict:
 
 
 class Coordinator:
-    def __init__(self, state: StateStore, models: ModelStore, clock: Clock = _utcnow):
+    def __init__(
+        self,
+        state: StateStore,
+        models: ModelStore,
+        clock: Clock = _utcnow,
+        repo_root: Path = REPO_ROOT,
+    ):
         self.state = state
         self.models = models
         self.clock = clock
+        self.repo_root = repo_root
+        self._aggregators: dict[str, Aggregator] = {}
 
     def start_run(self, config: RunConfig, run_id: str | None = None) -> RunRecord:
         """Create a run: pin its manifest, write the initial global model v0 and record both.
@@ -236,3 +288,252 @@ class Coordinator:
             deadline=round_.deadline_at,
             config=round_config(RunConfig.model_validate(run.config)),
         )
+
+    def active_task(self, client_id: str) -> TaskAssignment | None:
+        """`GET /task` without a run id: the client's task in whichever run is running."""
+        for run in self.state.running_runs():
+            task = self.task_for(client_id, run.run_id)
+            if task is not None:
+                return task
+        return None
+
+    def step(self, run_id: str) -> Step:
+        """Advance the run by at most one state-machine step, based only on persisted state.
+
+        Call it repeatedly (e.g. every second). Because every decision is re-derived from the
+        StateStore, the same call also resumes a run after a coordinator restart: a round left
+        in OPEN moves on to COLLECTING, one left in AGGREGATING is aggregated again (which is
+        deterministic and writes byte-identical output).
+        """
+        run = self.state.get_run(run_id)
+        if run.status is not RunStatus.RUNNING:
+            return Step.IDLE
+        config = RunConfig.model_validate(run.config)
+        round_ = self.state.latest_round(run_id)
+
+        if round_ is None or is_terminal(round_.state):
+            if round_ is not None and round_.round_id >= config.rounds.num_rounds:
+                self._complete_run(run)
+                return Step.COMPLETED
+            opened = self.open_round(run_id)
+            return Step.OPENED if opened is not None else Step.WAITING_FOR_CLIENTS
+
+        if round_.state is RoundState.OPEN:  # crashed between creating and opening the round
+            self.state.transition_round(
+                run_id,
+                round_.round_id,
+                round_.state_version,
+                RoundState.COLLECTING,
+                EventRecord("ROUND_COLLECTING", self.clock(), run_id, round_.round_id),
+            )
+            return Step.OPENED
+        if round_.state is RoundState.COLLECTING:
+            return self._close_if_ready(run, round_)
+        return self._aggregate(run, config, round_)  # AGGREGATING
+
+    def _close_if_ready(self, run: RunRecord, round_: RoundRecord) -> Step:
+        """All selected clients reported, or the deadline passed: mark missing clients as
+        dropouts, then aggregate if the quorum is met or fail the round."""
+        now = self.clock()
+        participants = self.state.participants(run.run_id, round_.round_id)
+        waiting = [p.client_id for p in participants if p.status is ParticipantStatus.SELECTED]
+        deadline_passed = now >= round_.deadline_at
+        if waiting and not deadline_passed:
+            return Step.COLLECTING
+
+        for client_id in waiting:  # only reached once the deadline has passed
+            self.state.set_participant_status(
+                run.run_id,
+                round_.round_id,
+                client_id,
+                ParticipantStatus.DROPOUT,
+                now,
+                EventRecord(
+                    "CLIENT_DROPOUT",
+                    now,
+                    run.run_id,
+                    round_.round_id,
+                    client_id,
+                    {"reason_code": "deadline_no_update"},
+                ),
+                reason_code="deadline_no_update",
+            )
+        received = len(self.state.updates(run.run_id, round_.round_id))
+        if received < round_.min_participants:
+            self._fail_round(
+                round_, "quorum_not_met", f"{received} updates, need {round_.min_participants}"
+            )
+            return Step.FAILED
+
+        self.state.transition_round(
+            run.run_id,
+            round_.round_id,
+            round_.state_version,
+            RoundState.AGGREGATING,
+            EventRecord(
+                "ROUND_AGGREGATING",
+                now,
+                run.run_id,
+                round_.round_id,
+                payload={"received": received, "dropouts": len(waiting)},
+            ),
+        )
+        aggregating = self.state.get_round(run.run_id, round_.round_id)
+        return self._aggregate(run, RunConfig.model_validate(run.config), aggregating)
+
+    def _aggregate(self, run: RunRecord, config: RunConfig, round_: RoundRecord) -> Step:
+        started = self.clock()
+        updates = self.state.updates(run.run_id, round_.round_id)
+        result = self._aggregator(run, config).aggregate(
+            RoundInput(
+                run_id=run.run_id,
+                round_id=round_.round_id,
+                input_version=round_.input_model_version,
+                input_key=round_.input_model_path,
+                input_sha256=round_.input_model_sha256,
+                updates=[
+                    UpdateRecord(
+                        u.update_id,
+                        u.client_id,
+                        u.model_version,
+                        u.num_samples,
+                        u.weights_path,
+                        u.checksum_sha256,
+                    )
+                    for u in updates
+                ],
+                min_participants=round_.min_participants,
+                max_num_samples=config.rounds.max_num_samples,
+            )
+        )
+        now = self.clock()
+        by_update = {u.update_id: u for u in updates}
+        for update_id, reason in result.rejected.items():
+            client_id = by_update[update_id].client_id
+            self.state.set_participant_status(
+                run.run_id,
+                round_.round_id,
+                client_id,
+                ParticipantStatus.REJECTED,
+                now,
+                EventRecord(
+                    "UPDATE_EXCLUDED",
+                    now,
+                    run.run_id,
+                    round_.round_id,
+                    client_id,
+                    {"update_id": update_id, "reason_code": reason.value},
+                ),
+                reason_code=reason.value,
+            )
+
+        if result.state is RoundState.FAILED:
+            self._fail_round(round_, result.reason.value, result.detail, result)
+            return Step.FAILED
+
+        timing = {
+            "round_duration_s": (now - round_.opened_at).total_seconds(),
+            "waiting_s": (started - round_.opened_at).total_seconds(),
+        }
+        metrics = _metric_rows(run.run_id, round_.round_id, result.metrics | timing, now)
+        for u in updates:
+            metrics += _metric_rows(
+                run.run_id,
+                round_.round_id,
+                {f"client_{k}": v for k, v in u.metrics.items()},
+                now,
+                client_id=u.client_id,
+            )
+        self.state.transition_round(
+            run.run_id,
+            round_.round_id,
+            round_.state_version,
+            RoundState.DONE,
+            EventRecord(
+                "ROUND_DONE",
+                now,
+                run.run_id,
+                round_.round_id,
+                payload={
+                    "used": result.used,
+                    "rejected": {k: v.value for k, v in result.rejected.items()},
+                    "output_model_version": result.output_version,
+                    "output_model_sha256": result.output_sha256,
+                },
+            ),
+            run_fields={
+                "model_version": result.output_version,
+                "model_path": result.output_key,
+                "model_sha256": result.output_sha256,
+            },
+            metrics=metrics,
+            output_model_version=result.output_version,
+            output_model_path=result.output_key,
+            output_model_sha256=result.output_sha256,
+            closed_at=now,
+        )
+        return Step.DONE
+
+    def _fail_round(
+        self,
+        round_: RoundRecord,
+        reason: str,
+        detail: str | None,
+        result: AggregationResult | None = None,
+    ) -> None:
+        now = self.clock()
+        current = self.state.get_round(round_.run_id, round_.round_id)
+        metrics = (
+            _metric_rows(round_.run_id, round_.round_id, result.metrics, now) if result else []
+        )
+        self.state.transition_round(
+            round_.run_id,
+            round_.round_id,
+            current.state_version,
+            RoundState.FAILED,
+            EventRecord(
+                "ROUND_FAILED",
+                now,
+                round_.run_id,
+                round_.round_id,
+                payload={"reason_code": reason, "detail": detail},
+            ),
+            metrics=metrics,
+            failure_reason=reason,
+            closed_at=now,
+        )
+
+    def _complete_run(self, run: RunRecord) -> None:
+        now = self.clock()
+        self.state.update_run(
+            run.run_id,
+            EventRecord(
+                "RUN_COMPLETED",
+                now,
+                run.run_id,
+                payload={"model_version": run.model_version, "model_sha256": run.model_sha256},
+            ),
+            status=RunStatus.COMPLETED,
+            completed_at=now,
+        )
+
+    def _aggregator(self, run: RunRecord, config: RunConfig) -> Aggregator:
+        """Built once per run: the held-out set is loaded and the strategy configured."""
+        if run.run_id not in self._aggregators:
+            task = get_task(config.task.name)
+            manifest = json.loads(self.models.get(manifest_key(run.run_id)))
+            dtype = torch.int64 if task.name == "text" else torch.float32
+            sanity = torch.tensor(
+                [t["model_input"] for t in manifest["forward_reference_tests"]], dtype=dtype
+            )
+            held_out = task.held_out_path(self.repo_root / config.task.data_dir)
+            strategy_kwargs = {"mu": config.strategy.mu} if config.strategy.mu is not None else {}
+            self._aggregators[run.run_id] = Aggregator(
+                strategy=build_strategy(config.strategy.name, **strategy_kwargs),
+                contract=task.contract(),
+                store=self.models,
+                build_model=task.build_model,
+                evaluator=HeldOutEvaluator(task.build_model, *task.load_split(held_out)),
+                sanity_inputs=sanity,
+            )
+        return self._aggregators[run.run_id]

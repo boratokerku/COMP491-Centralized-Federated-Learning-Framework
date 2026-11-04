@@ -93,6 +93,34 @@ class ParticipantRecord:
 
 
 @dataclass(frozen=True)
+class StoredUpdate:
+    """An accepted upload (`updates` table). The weights live in the ModelStore."""
+
+    update_id: str
+    run_id: str
+    round_id: int
+    client_id: str
+    model_version: int
+    num_samples: int
+    weights_path: str
+    checksum_sha256: str
+    payload_bytes: int
+    received_at: datetime
+    metrics: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MetricRecord:
+    run_id: str
+    metric_name: str
+    value: float
+    unit: str
+    recorded_at: datetime
+    round_id: int | None = None
+    client_id: str | None = None
+
+
+@dataclass(frozen=True)
 class EventRecord:
     event_type: str
     created_at: datetime
@@ -143,17 +171,55 @@ class StateStore(ABC):
         expected_version: int,
         target: RoundState,
         event: EventRecord,
+        run_fields: dict[str, Any] | None = None,
+        metrics: list[MetricRecord] | None = None,
         **fields: Any,
     ) -> RoundRecord:
-        """Move the round to `target` (checked against the state machine), set `fields`, bump
-        state_version and insert `event`, all at once. Raise StaleStateError if the stored
-        state_version is not `expected_version`."""
+        """In one transaction: move the round to `target` (checked against the state machine),
+        set its `fields`, bump state_version, apply `run_fields` to the run (e.g. the new
+        global model pointer), insert `metrics` and `event`. Raise StaleStateError if the
+        stored state_version is not `expected_version`."""
+
+    @abstractmethod
+    def update_run(self, run_id: str, event: EventRecord, **fields: Any) -> RunRecord: ...
+
+    @abstractmethod
+    def get_update(self, update_id: str) -> StoredUpdate | None: ...
+
+    @abstractmethod
+    def find_update(self, run_id: str, round_id: int, client_id: str) -> StoredUpdate | None: ...
+
+    @abstractmethod
+    def accept_update(self, update: StoredUpdate, event: EventRecord) -> None:
+        """Insert the update and mark its participant UPDATE_ACCEPTED in one transaction.
+        Raise ValueError on a duplicate update_id or (run, round, client)."""
+
+    @abstractmethod
+    def updates(self, run_id: str, round_id: int) -> list[StoredUpdate]: ...
+
+    @abstractmethod
+    def set_participant_status(
+        self,
+        run_id: str,
+        round_id: int,
+        client_id: str,
+        status: ParticipantStatus,
+        at: datetime,
+        event: EventRecord,
+        reason_code: str | None = None,
+    ) -> None: ...
 
     @abstractmethod
     def add_event(self, event: EventRecord) -> None: ...
 
     @abstractmethod
     def events(self, run_id: str | None = None) -> list[EventRecord]: ...
+
+    @abstractmethod
+    def add_metrics(self, metrics: list[MetricRecord]) -> None: ...
+
+    @abstractmethod
+    def metrics(self, run_id: str) -> list[MetricRecord]: ...
 
 
 class InMemoryStateStore(StateStore):
@@ -164,7 +230,9 @@ class InMemoryStateStore(StateStore):
         self._rounds: dict[tuple[str, int], RoundRecord] = {}
         self._participants: dict[tuple[str, int], dict[str, ParticipantRecord]] = {}
         self._eligible: dict[str, set[str]] = {}  # manifest_version -> client_ids
+        self._updates: dict[str, StoredUpdate] = {}
         self._events: list[EventRecord] = []
+        self._metrics: list[MetricRecord] = []
 
     # Simulation setup: in distributed mode this comes from registration and conformance.
     def mark_eligible(self, manifest_version: str, client_ids: list[str]) -> None:
@@ -212,6 +280,8 @@ class InMemoryStateStore(StateStore):
         expected_version: int,
         target: RoundState,
         event: EventRecord,
+        run_fields: dict[str, Any] | None = None,
+        metrics: list[MetricRecord] | None = None,
         **fields: Any,
     ) -> RoundRecord:
         current = self._rounds[(run_id, round_id)]
@@ -224,12 +294,71 @@ class InMemoryStateStore(StateStore):
         updated = replace(
             current, state=new_state, state_version=current.state_version + 1, **fields
         )
+        if run_fields:
+            self._runs[run_id] = replace(self._runs[run_id], **run_fields)
         self._rounds[(run_id, round_id)] = updated
+        self._metrics.extend(metrics or [])
         self._events.append(event)
         return updated
+
+    def update_run(self, run_id: str, event: EventRecord, **fields: Any) -> RunRecord:
+        self._runs[run_id] = replace(self._runs[run_id], **fields)
+        self._events.append(event)
+        return self._runs[run_id]
+
+    def get_update(self, update_id: str) -> StoredUpdate | None:
+        return self._updates.get(update_id)
+
+    def find_update(self, run_id: str, round_id: int, client_id: str) -> StoredUpdate | None:
+        for u in self._updates.values():
+            if (u.run_id, u.round_id, u.client_id) == (run_id, round_id, client_id):
+                return u
+        return None
+
+    def accept_update(self, update: StoredUpdate, event: EventRecord) -> None:
+        if update.update_id in self._updates:
+            raise ValueError(f"update {update.update_id} already exists")
+        if self.find_update(update.run_id, update.round_id, update.client_id) is not None:
+            raise ValueError("an update for this client and round already exists")
+        key = (update.run_id, update.round_id)
+        participant = self._participants[key][update.client_id]  # FK: must be selected
+        self._participants[key][update.client_id] = replace(
+            participant, status=ParticipantStatus.UPDATE_ACCEPTED, finished_at=update.received_at
+        )
+        self._updates[update.update_id] = update
+        self._events.append(event)
+
+    def updates(self, run_id: str, round_id: int) -> list[StoredUpdate]:
+        found = [u for u in self._updates.values() if (u.run_id, u.round_id) == (run_id, round_id)]
+        return sorted(found, key=lambda u: u.client_id)
+
+    def set_participant_status(
+        self,
+        run_id: str,
+        round_id: int,
+        client_id: str,
+        status: ParticipantStatus,
+        at: datetime,
+        event: EventRecord,
+        reason_code: str | None = None,
+    ) -> None:
+        key = (run_id, round_id)
+        self._participants[key][client_id] = replace(
+            self._participants[key][client_id],
+            status=status,
+            finished_at=at,
+            reason_code=reason_code,
+        )
+        self._events.append(event)
 
     def add_event(self, event: EventRecord) -> None:
         self._events.append(event)
 
     def events(self, run_id: str | None = None) -> list[EventRecord]:
         return [copy.deepcopy(e) for e in self._events if run_id is None or e.run_id == run_id]
+
+    def add_metrics(self, metrics: list[MetricRecord]) -> None:
+        self._metrics.extend(metrics)
+
+    def metrics(self, run_id: str) -> list[MetricRecord]:
+        return [m for m in self._metrics if m.run_id == run_id]
