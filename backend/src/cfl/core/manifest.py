@@ -53,6 +53,15 @@ VALIDATION = {
 }
 
 
+def manifest_id(manifest: dict) -> str:
+    """The identity a run pins and clients pass conformance for: "<dataset>@<version>".
+
+    The version alone is not enough: the tabular and the text manifest are both 1.0.0, and a
+    client that passed one must not count as conformant for the other.
+    """
+    return f"{manifest['dataset']['name']}@{manifest['manifest_version']}"
+
+
 def reference_weights(contract: ModelContract) -> StateDict:
     """Language-independent weights for the forward reference test (REFERENCE_WEIGHTS_ID).
 

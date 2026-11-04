@@ -2,7 +2,7 @@
 
 Next.js web application (WP6, owner: Hilal): public project site plus a login-protected internal
 area (live round view, update inbox, event log, metrics panels, results, human-readable reports,
-client compatibility status). Decisions: `planning/interfaces.md`, sections 6 and 7.
+client compatibility status). Decisions: `planning/interfaces.md`, sections 6 and 8.
 
 Not scaffolded yet. To start:
 

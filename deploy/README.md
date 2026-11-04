@@ -54,6 +54,14 @@ docker compose -f deploy/docker-compose.yml logs -f coordinator
 
 ## Client sites
 
+The administrator approves each site and hands it its token out of band (shown once; only its hash is stored):
+
+```bash
+docker compose -f deploy/docker-compose.yml run --rm gateway cfl-admin add-client bank-a
+docker compose -f deploy/docker-compose.yml run --rm gateway cfl-admin list
+# rotate-token <id> after a leak, disable <id> / enable <id> to block or unblock a site
+```
+
 Each participating organization runs the `cfl-client` image on its own machine and network (`deploy/client/`):
 
 ```bash

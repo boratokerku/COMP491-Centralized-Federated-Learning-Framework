@@ -87,6 +87,7 @@ def _event_values(event: EventRecord) -> dict[str, Any]:
         "message_type": payload.get("message_type"),
         "reason_code": payload.get("reason_code"),
         "message_bytes": payload.get("bytes"),
+        "duration_ms": payload.get("duration_ms"),
         "details": payload,
     }
 
@@ -99,6 +100,7 @@ def _metric_values(m: MetricRecord) -> dict[str, Any]:
         "metric_name": m.metric_name,
         "value": m.value,
         "unit": m.unit,
+        "message_type": m.message_type,
         "recorded_at": m.recorded_at,
     }
 
@@ -402,7 +404,14 @@ class PostgresStateStore(StateStore):
             ).all()
         return [
             MetricRecord(
-                r.run_id, r.metric_name, r.value, r.unit, r.recorded_at, r.round_id, r.client_id
+                r.run_id,
+                r.metric_name,
+                r.value,
+                r.unit,
+                r.recorded_at,
+                r.round_id,
+                r.client_id,
+                r.message_type,
             )
             for r in rows
         ]

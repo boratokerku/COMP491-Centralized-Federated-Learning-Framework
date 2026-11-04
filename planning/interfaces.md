@@ -68,12 +68,23 @@ The payload format is the "Report payload contract" in `planning/conformance-man
 - Two hostnames on the same IP (`sslip.io`): `fl.<ip>.sslip.io` → gateway (client API only), `<ip>.sslip.io` → website, with Grafana under `/grafana/`. Clients use port 443, not 8443, because institutional networks often block other ports.
 - The website is a Next.js service in the same compose file. Its read-only API (`/api/v1/...` in `api-spec.md` section 4) is implemented inside the website (Next.js route handlers), not in the gateway, so the internet-facing client API stays minimal. The website connects to PostgreSQL with a **read-only role** (`cfl_web`, `SELECT` only) and reads report files from the model volume mounted read-only.
 - Internal area login: a handful of accounts (team and advisors), passwords stored as Argon2/bcrypt hashes, httpOnly session cookies. Client tokens are never reused for website logins.
-- The public area never shows client identities, update details or event logs of real runs; see section 7.
+- The public area never shows client identities, update details or event logs of real runs; see section 8.
 
-## 7. Public "how it works" demonstration
+## 7. Client tokens
+
+- `cfl-admin add-client <id>` approves a client and prints its token once (`--token-file` writes it to a mode-600 file instead). The site stores it as its Docker secret; it is never committed, baked into an image or sent anywhere else.
+- Format `cfl_<43 url-safe characters>` (256 random bits). The `clients.token_hash` column holds its SHA-256. This deliberately differs from the Argon2/bcrypt example in `api-spec.md` section 2.2: slow salted hashes protect guessable passwords, while these tokens cannot be guessed, and an unsalted hash lets the gateway find the client with one indexed lookup. GitHub stores its API tokens the same way.
+- Every client endpoint requires `Authorization: Bearer <token>`: missing or unknown token → 401 (`missing_token`, `invalid_token`), disabled client → 403 (`client_disabled`). Each authenticated request updates `clients.last_seen_at`.
+- `rotate-token` replaces a leaked token immediately; `disable` / `enable` block and unblock a client. Every administrative action is recorded in `events` (`CLIENT_APPROVED`, `CLIENT_TOKEN_ROTATED`, `CLIENT_DISABLED`, `CLIENT_ENABLED`).
+
+## 8. Public "how it works" demonstration
 
 The public site shows the training process without exposing a live system:
 
 - An animated replay of a completed demo run, driven by its exported report (`summary.json`): rounds advancing, clients reporting, a dropout and the coordinator restart, the global F1/ROC-AUC curve. Static data, so it always works and cannot be abused.
 - Optionally a read-only live status of one designated public demo run (round number, state, global metric curve only), served by the website from the read-only role.
 - Visitors cannot start runs or reach the gateway from the site.
+
+## 9. Gateway protocol
+
+`planning/api-spec.md` (version 1.1.0, maintainer: Enes) is the authoritative description of the client API and is kept in line with `backend/src/cfl/gateway/app.py`. Its "Changes in 1.1.0" line lists the decisions taken while implementing the gateway: manifest identity `"<dataset>@<version>"`, `GET /conformance`, the extended conformance report, registration before every other endpoint, participant-only model downloads, final-model `format` values, idempotent retries before stale checks, SHA-256 token hashes, protocol `0.1`, port 443, and the web API living in the website.

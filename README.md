@@ -73,6 +73,8 @@ python backend/scripts/run_simulation.py --config backend/configs/sim_text.yaml 
 
 ## Design specifications
 
+- [Gateway REST API and message specification](planning/api-spec.md)
+- [Team interfaces and decisions](planning/interfaces.md)
 - [PostgreSQL schema and sequence-diagram DB mapping](planning/db-schema.md)
 - [Client conformance contract](planning/conformance-manifest.md), [JSON Schema](planning/conformance-manifest.schema.json), and [Bank Marketing example](planning/examples/bank_marketing_manifest.json)
 - [ER diagram source](diagrams/database/er_diagram.puml) and rendered [PNG](diagrams/database/er_diagram.png)
