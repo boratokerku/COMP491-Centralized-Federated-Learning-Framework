@@ -29,6 +29,7 @@ dependencies = [
 
 [project.scripts]
 cfl-admin = "cfl.gateway.admin:main"
+cfl-client = "cfl.client.__main__:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.4", "jsonschema>=4.21"]

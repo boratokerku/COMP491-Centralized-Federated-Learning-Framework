@@ -39,3 +39,5 @@ artifacts/
 deploy/client/token.txt
 deploy/client/ca/
 cfl-client-*.tar.gz*
+deploy/client/client.yaml
+deploy/client/state/

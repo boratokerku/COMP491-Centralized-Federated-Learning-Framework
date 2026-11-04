@@ -56,12 +56,11 @@ CMD ["uvicorn", "cfl.gateway.app:app", "--host", "0.0.0.0", "--port", "8000", "-
 
 
 FROM base AS client
-# /data: this site's partition, mounted read-only. /state: pending updates and downloaded models
-# that must survive a container restart. The token comes from a secret file, never an env var.
-ENV CFL_CLIENT_VERSION=cfl-client/${CFL_VERSION} \
-    CFL_PARTITION_DIR=/data \
-    CFL_STATE_DIR=/state \
-    CFL_TOKEN_FILE=/run/secrets/cfl_token
+# Defaults (cfl.client.settings): partition in /data (mounted read-only), state in /state (a
+# volume: pending updates must survive a restart), token in the secret /run/secrets/cfl_token.
+# They are deliberately not set as environment variables here, because environment variables
+# override a config file passed with --config. Only the image's own version is fixed.
+ENV CFL_CLIENT_VERSION=cfl-client/${CFL_VERSION}
 RUN mkdir -p /state && chown cfl:cfl /state
 USER cfl
 ENTRYPOINT ["python", "-m", "cfl.client"]
