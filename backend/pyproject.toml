@@ -26,6 +26,9 @@ dependencies = [
     "onnxruntime>=1.18",
 ]
 
+[project.scripts]
+cfl-admin = "cfl.gateway.admin:main"
+
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.4", "jsonschema>=4.21"]
 
