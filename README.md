@@ -45,7 +45,9 @@ Run the gateway locally:
 uvicorn cfl.gateway.app:app --reload
 ```
 
-Start PostgreSQL and Grafana:
+Run the whole server side in containers (gateway, coordinator, PostgreSQL, Grafana, Caddy) and
+set up client sites: see [deploy/README.md](deploy/README.md). For development, start PostgreSQL
+and Grafana:
 
 ```bash
 cp deploy/.env.example deploy/.env   # then set the passwords

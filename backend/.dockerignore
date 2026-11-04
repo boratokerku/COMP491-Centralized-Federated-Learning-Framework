@@ -1,0 +1,11 @@
+# Build context for backend/Dockerfile: only source, configs and migrations go into images.
+.venv/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.ruff_cache/
+tests/
+*.safetensors
+*.onnx
+.env
+*.env

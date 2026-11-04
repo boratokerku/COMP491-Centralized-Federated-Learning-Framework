@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import random
 import time
 import uuid
@@ -61,7 +62,8 @@ from cfl.tasks.registry import get_task
 
 Clock = Callable[[], datetime]
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+# Run configs resolve data_dir against this; containers set CFL_REPO_ROOT (see backend/Dockerfile).
+REPO_ROOT = Path(os.environ.get("CFL_REPO_ROOT") or Path(__file__).resolve().parents[4])
 
 
 class Step(StrEnum):

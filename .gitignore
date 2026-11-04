@@ -34,3 +34,8 @@ runs/
 artifacts/
 *.safetensors
 *.onnx
+
+# Deployment secrets and per-site client files
+deploy/client/token.txt
+deploy/client/ca/
+cfl-client-*.tar.gz*

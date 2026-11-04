@@ -1,7 +1,8 @@
 # frontend/
 
-Next.js web application (WP6): public project site plus an authenticated internal area
-(live round view, update inbox, logs, client compatibility status).
+Next.js web application (WP6, owner: Hilal): public project site plus a login-protected internal
+area (live round view, update inbox, event log, metrics panels, results, human-readable reports,
+client compatibility status). Decisions: `planning/interfaces.md`, sections 6 and 7.
 
 Not scaffolded yet. To start:
 
@@ -9,5 +10,13 @@ Not scaffolded yet. To start:
 npx create-next-app@latest . --ts --eslint --app --src-dir
 ```
 
-The internal area should read data through read-only gateway/API endpoints, not by connecting
-to PostgreSQL directly.
+## Contract with the deployment (`deploy/docker-compose.yml`, service `web`)
+
+- Provide a `Dockerfile` here that serves the app on port **3000** (e.g. Next.js `output: "standalone"`).
+- The app reads data on the server side only, through its own route handlers (`/api/v1/...`,
+  `planning/api-spec.md` section 4). It connects to PostgreSQL with the read-only role given in
+  `DATABASE_URL` (`cfl_web`: `SELECT` only, no access to client token hashes). The browser never
+  talks to PostgreSQL or to the gateway.
+- Run reports and artifacts are under `REPORTS_DIR` (the models volume, mounted read-only).
+- `PUBLIC_URL` is the site's own address. Grafana is served by Caddy under `/grafana/`.
+- Start it with the rest of the stack: `docker compose -f deploy/docker-compose.yml --profile web up -d --build`.
