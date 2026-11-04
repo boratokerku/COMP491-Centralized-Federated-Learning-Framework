@@ -63,7 +63,7 @@ Based on the official Capstone Project Description and the project proposal (adv
    - **FedProx:** Addition of a proximal term (with a coefficient μ) to the client local objective, keeping local models close to the global model to address system and data heterogeneity.
 3. **Dual Execution Modes:**
    - **Simulation Mode:** Multiple clients run on a single machine for debugging and benchmarking. Clients communicate through an in-memory transport, and coordinator state is kept in an in-memory store behind the same storage interface used in distributed mode.
-   - **Real Distributed Mode:** The coordinator and clients run on genuinely separate machines (university servers and team members' machines) and communicate over the Internet.
+   - **Real Distributed Mode:** The coordinator and clients run on genuinely separate machines and communicate over the Internet. The server side (gateway, coordinator, PostgreSQL, Grafana, web application, behind Caddy) runs on a cloud VM with a public IP. Each client runs on its own machine and network (team members' home, campus and mobile networks; university cluster nodes if A15 allows), never a shared LAN or VPN, and only opens outbound HTTPS connections to the gateway, as an organization behind its own firewall would.
    - The two modes share the same training and orchestration abstractions where practical.
 4. **Data Distribution:** A fully randomized (IID) partition of each dataset across clients, generated with a fixed seed.
 5. **Configuration & Reproducibility:** Every run is defined by a YAML configuration file validated with Pydantic, including all random seeds, so any reported result can be rerun.
@@ -95,7 +95,7 @@ Based on the official Capstone Project Description and the project proposal (adv
 5. **Demonstration:** The independent mode is demonstrated with a separately written minimal client that does not use our client package: one conforming variant and several mismatching variants (wrong feature order, unit, label range, pre-processing version, model shape).
 
 #### D. Communication & Security
-1. **Transport Layer:** A REST API implemented with FastAPI, served over HTTPS. TLS is terminated at a Caddy reverse proxy in front of the gateway; plain HTTP is refused. The certificate source is an open decision (Section 6, S2).
+1. **Transport Layer:** A REST API implemented with FastAPI, served over HTTPS. TLS is terminated at a Caddy reverse proxy in front of the gateway; plain HTTP is refused. Caddy obtains a Let's Encrypt certificate for a hostname of the VM's public IP (e.g. via `sslip.io`), so nothing has to be distributed to clients.
 2. **Client-Initiated Architecture:** Clients always initiate requests (`POST /register`, `GET /task`, `GET /model`, `POST /update`), avoiding firewall/NAT traversal issues. Clients poll `GET /task` at a configurable interval.
 3. **Client Registration & Authentication:** An administrator adds clients to the approved list with a CLI command. Each approved client receives a per-client token (stored hashed) that is required on every request. Unregistered clients are rejected.
 4. **Weights & Integrity:** Model weights are exchanged in the `safetensors` format (never pickle) with SHA-256 checksums on every distributed and uploaded artifact. Weight files are stored on the server's file system; PostgreSQL stores their paths and metadata.
@@ -219,7 +219,5 @@ Decisions that are still open. When one is closed, write it into the relevant se
 
 | ID | Decision needed | Options | Recommendation | Depends on |
 | :--- | :--- | :--- | :--- | :--- |
-| A1 | Where the coordinator, gateway and web application run, and how clients reach them over the Internet | (a) University server with a public address (b) University server reachable only via VPN (c) Cloud VM with a public IP (d) A team member's machine with port forwarding | Ask university IT for (a). Needed for the public site (week 4) and the mid-demo (M4.4). | University IT |
 | A15 | Use of university cluster nodes as client machines | (a) Cluster nodes run some of the clients (b) Only team members' machines | (a) if the advisors confirm access. Check first: outbound HTTPS (port 443) from compute nodes, whether Docker is allowed (clusters often only allow Apptainer/Singularity, which can run our Docker image), and job time limits. A first trial runs on team members' machines. | Advisors |
-| S2 | TLS certificate source | (a) Let's Encrypt on a hostname (free: `sslip.io`, a `ku.edu.tr` subdomain, or a GitHub Student Pack `.tech`/`.me` domain); nothing to distribute; needs a public IP (b) Own CA via Caddy `tls internal`; works without a public IP; clients receive our root certificate | Public IP → (a), otherwise (b). | A1 |
 | B1 | Tabular dataset | (a) Banking dataset from the advisors (b) UCI Bank Marketing (c) UCI Default of Credit Card Clients | (a) if it arrives with a clear license; development starts on (b). | Advisors |
