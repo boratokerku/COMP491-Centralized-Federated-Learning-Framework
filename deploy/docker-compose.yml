@@ -8,6 +8,8 @@
 # administration over SSH; everything else is reachable only inside the compose network.
 # Full guide: deploy/README.md
 
+name: COMP491-Centralized-Federated-Learning-Framework
+
 x-server: &server
   image: ${CFL_SERVER_IMAGE:-cfl-server:${CFL_VERSION:-dev}}
   build:
@@ -30,12 +32,12 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-cfl}
       CFL_WEB_DB_PASSWORD: ${CFL_WEB_DB_PASSWORD:?set CFL_WEB_DB_PASSWORD in deploy/.env}
     ports:
-      - "127.0.0.1:${CFL_POSTGRES_PORT:-5432}:5432"   # administration only (SSH tunnel on the VM)
+      - "127.0.0.1:${CFL_POSTGRES_PORT:-5432}:5432" # administration only (SSH tunnel on the VM)
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./postgres/init:/docker-entrypoint-initdb.d:ro   # creates the read-only cfl_web role
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro # creates the read-only cfl_web role
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -44,14 +46,14 @@ services:
   migrate:
     <<: *server
     restart: "no"
-    command: ["alembic", "upgrade", "head"]
+    command: [ "alembic", "upgrade", "head" ]
     depends_on:
       postgres:
         condition: service_healthy
 
   coordinator:
     <<: *server
-    command: ["python", "-m", "cfl.coordinator", "--models", "/models"]
+    command: [ "python", "-m", "cfl.coordinator", "--models", "/models" ]
     volumes:
       - models:/models
       # The server's held-out test sets (data/<modality>/partitions/<dataset>/test.csv).
@@ -71,7 +73,7 @@ services:
 
   # Website (Hilal): built from frontend/Dockerfile, must listen on port 3000.
   web:
-    profiles: ["web"]
+    profiles: [ "web" ]
     image: ${CFL_WEB_IMAGE:-cfl-web:${CFL_VERSION:-dev}}
     build:
       context: ../frontend
