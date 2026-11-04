@@ -66,7 +66,7 @@ Use exact-match comparison for names, order, versions, units, categories, dimens
 5. Gateway independently validates the report against the stored manifest and expected outputs. A client-reported `passed=true` is not trusted by itself.
 6. Gateway stores the submitted payload and final server decision in `conformance_reports`; it returns accepted or a stable rejection code. The coordinator selects only clients with a latest `PASSED` record for the run's exact `manifest_version`.
 
-The endpoint path and HTTP status mapping must be finalized with the REST API owner (Enes). The database column names intentionally align with `conformance_reports` in [`db-schema.md`](db-schema.md): `manifest_version`, `client_version`, `protocol_version`, `status`, `reason_code`, `report_payload`, and `checked_at`.
+Endpoints and status codes: [`api-spec.md`](api-spec.md), sections 3.2 and 3.3 (`GET /conformance`, `GET /conformance/{manifest_version}`, `POST /conformance/report`; 200 passed, 422 failed). The database column names intentionally align with `conformance_reports` in [`db-schema.md`](db-schema.md): `manifest_version`, `client_version`, `protocol_version`, `status`, `reason_code`, `report_payload`, and `checked_at`.
 
 ## Report payload contract
 

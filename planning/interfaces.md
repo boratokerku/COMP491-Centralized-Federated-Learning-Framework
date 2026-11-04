@@ -85,17 +85,6 @@ The public site shows the training process without exposing a live system:
 - Optionally a read-only live status of one designated public demo run (round number, state, global metric curve only), served by the website from the read-only role.
 - Visitors cannot start runs or reach the gateway from the site.
 
-## 9. Gateway protocol: decisions beyond `api-spec.md`
+## 9. Gateway protocol
 
-Implemented in `backend/src/cfl/gateway/app.py`; `api-spec.md` stays the reference for everything not listed here.
-
-- **Manifest identity** is `"<dataset>@<version>"` (e.g. `bank_marketing@1.0.0`), used in `runs.manifest_version`, `conformance_reports.manifest_version`, the report's `manifest_version` and `GET /conformance/{manifest_version}`. The version alone is ambiguous: the tabular and the text manifest are both 1.0.0, and passing one must not make a client eligible for the other.
-- **`GET /conformance`** (addition) lists the manifests of the running runs (`manifest_version`, `dataset`, `manifest_sha256`), so a client picks the one for its dataset.
-- **Order of access:** every endpoint needs a valid token; every endpoint except `POST /register` also needs a registered client (`403 not_registered`). Model downloads are limited to clients selected in at least one round of the run (`403 not_participant`).
-- **Client versions:** `CFL_ALLOWED_CLIENT_VERSIONS` (comma-separated patterns, e.g. `cfl-client/0.1.*`) restricts registration; unset accepts any version (`403 version_not_approved`).
-- **Conformance report additions** (`planning/conformance-manifest.md`): `declared_model.fingerprint`, `declared_input.categories`, `declared_input.tokenizer`, `declared_label`, `forward_outputs`. `feature_units` holds the numeric unit, `"category"` for categorical and `"text"` for text features. `client_passed` is ignored; the gateway re-runs `cfl.conformance.checker`. A passing report returns 200, a failing one 422 with `reason_code` and `details`.
-- **`POST /update`:** a retry with an already accepted `update_id` is acknowledged (200, `duplicate_idempotent`) before the stale/deadline checks, so a client whose response was lost never sees its accepted update reported as stale. Status codes: 422 `checksum_mismatch` / `invalid_update_id`, 403 `not_selected` / `identity_mismatch`, 404 `unknown_round`, 409 `stale_round` / `deadline_passed` / `model_version_mismatch` / `duplicate_update`.
-- **`GET /model/{run_id}/final?format=`** accepts `safetensors` (default, as in the spec), `onnx`, `artifact` (`artifact.json`) and `manifest`. Every response carries `X-Checksum-SHA256` of the file and `X-Final-Model-SHA256` of `model.onnx` from the database, which clients pass to `cfl.core.artifact.verify_artifact`.
-- **Protocol version** is `0.1` (`cfl.protocol.PROTOCOL_VERSION`); the `1.0` in the spec's examples is illustrative.
-- **Communication metrics:** model downloads, final-model downloads and accepted uploads write `message_bytes` and `transfer_ms` rows with their `message_type` (section 4).
-
+`planning/api-spec.md` (version 1.1.0, maintainer: Enes) is the authoritative description of the client API and is kept in line with `backend/src/cfl/gateway/app.py`. Its "Changes in 1.1.0" line lists the decisions taken while implementing the gateway: manifest identity `"<dataset>@<version>"`, `GET /conformance`, the extended conformance report, registration before every other endpoint, participant-only model downloads, final-model `format` values, idempotent retries before stale checks, SHA-256 token hashes, protocol `0.1`, port 443, and the web API living in the website.
