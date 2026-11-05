@@ -11,8 +11,21 @@
 }
 
 {$CFL_WEB_DOMAIN} {
+	# Grafana is only reachable with a website session. forward_auth asks the website
+	# (/api/auth/verify) first: without a session the visitor is sent to the login form;
+	# with one, the user name is passed on in X-WEBAUTH-USER and Grafana (auth proxy mode)
+	# signs that user in as a viewer. Any X-WEBAUTH-USER sent by the visitor is dropped first.
 	handle /grafana* {
-		reverse_proxy grafana:3000
+		# route keeps this order: Caddy would otherwise run request_header after forward_auth
+		# and delete the verified header as well.
+		route {
+			request_header -X-WEBAUTH-USER
+			forward_auth web:3000 {
+				uri /api/auth/verify?redirect=1
+				copy_headers X-Auth-User>X-WEBAUTH-USER
+			}
+			reverse_proxy grafana:3000
+		}
 	}
 	handle {
 		reverse_proxy web:3000

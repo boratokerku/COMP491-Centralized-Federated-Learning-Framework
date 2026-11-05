@@ -1,0 +1,707 @@
+{
+  "uid": "cfl-run",
+  "title": "CFL Run Overview",
+  "tags": [
+    "cfl"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "utc",
+  "refresh": "10s",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "description": "Round state, durations, failures, global metrics and transfer metrics of one run. Data: PostgreSQL via the read-only role cfl_web.",
+  "templating": {
+    "list": [
+      {
+        "name": "run_id",
+        "label": "Run",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "cfl-postgres"
+        },
+        "refresh": 1,
+        "sort": 0,
+        "query": "SELECT name || ' (' || left(run_id::text, 8) || ')' AS __text, run_id::text AS __value FROM runs ORDER BY created_at DESC",
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Run status",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT status FROM runs WHERE run_id = '$run_id'"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "background"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "COMPLETED": {
+                  "color": "green",
+                  "text": "COMPLETED"
+                },
+                "RUNNING": {
+                  "color": "blue",
+                  "text": "RUNNING"
+                },
+                "PENDING": {
+                  "color": "blue",
+                  "text": "PENDING"
+                },
+                "FAILED": {
+                  "color": "red",
+                  "text": "FAILED"
+                },
+                "ABORTED": {
+                  "color": "red",
+                  "text": "ABORTED"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Current round",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 5,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT round_id::text || ' (' || state || ')' AS round FROM rounds WHERE run_id = '$run_id' ORDER BY round_id DESC LIMIT 1"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Global model version",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 11,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT model_version FROM runs WHERE run_id = '$run_id'"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Failed rounds",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) AS failed FROM rounds WHERE run_id = '$run_id' AND state = 'FAILED'"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "background"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Dropouts",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 19,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) AS dropouts FROM round_participants WHERE run_id = '$run_id' AND status = 'DROPOUT'"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "background"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Round state",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT r.round_id AS \"Round\", r.state AS \"State\",\n  count(p.client_id) FILTER (WHERE p.status = 'UPDATE_ACCEPTED') || '/' || count(p.client_id) AS \"Updates used\",\n  r.min_participants AS \"Min\", r.opened_at AS \"Opened\", r.closed_at AS \"Closed\",\n  COALESCE(r.failure_reason, '') AS \"Failure reason\"\nFROM rounds r LEFT JOIN round_participants p USING (run_id, round_id)\nWHERE r.run_id = '$run_id' GROUP BY r.run_id, r.round_id ORDER BY r.round_id DESC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "State"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "DONE": {
+                        "color": "green",
+                        "text": "DONE"
+                      },
+                      "OPEN": {
+                        "color": "blue",
+                        "text": "OPEN"
+                      },
+                      "COLLECTING": {
+                        "color": "blue",
+                        "text": "COLLECTING"
+                      },
+                      "AGGREGATING": {
+                        "color": "blue",
+                        "text": "AGGREGATING"
+                      },
+                      "FAILED": {
+                        "color": "red",
+                        "text": "FAILED"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Round duration and phases (ms)",
+      "description": "Coordinator timing per round (planning/interfaces.md, section 4).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT recorded_at AS time, metric_name AS metric, value FROM metrics\nWHERE run_id = '$run_id' AND client_id IS NULL AND message_type IS NULL AND metric_name IN ('round_duration_ms', 'waiting_ms', 'aggregation_ms', 'evaluation_ms', 'load_ms', 'write_ms')\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "pointSize": 6
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Global model metrics (held-out test set)",
+      "description": "",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT recorded_at AS time, metric_name AS metric, value FROM metrics\nWHERE run_id = '$run_id' AND client_id IS NULL AND message_type IS NULL AND metric_name IN ('global_f1', 'global_roc_auc', 'global_pr_auc', 'global_accuracy')\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "pointSize": 6
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "barchart",
+      "title": "Failures and incidents",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT event_type AS \"Event\", count(*) AS \"Count\" FROM events\nWHERE run_id = '$run_id' AND event_type IN ('CLIENT_DROPOUT','UPDATE_REJECTED','UPDATE_EXCLUDED','ROUND_FAILED','COORDINATOR_RESUMED','RUN_FAILED')\nGROUP BY 1 ORDER BY 2 DESC"
+        }
+      ],
+      "options": {
+        "xField": "Event",
+        "orientation": "horizontal",
+        "legend": {
+          "showLegend": false
+        },
+        "showValue": "always"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Recent failures and dropouts",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 20,
+        "w": 16,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT occurred_at AS \"Time\", event_type AS \"Event\", round_id AS \"Round\", client_id AS \"Client\",\n  COALESCE(reason_code, '') AS \"Reason\" FROM events\nWHERE run_id = '$run_id' AND event_type IN ('CLIENT_DROPOUT','UPDATE_REJECTED','UPDATE_EXCLUDED','ROUND_FAILED','COORDINATOR_RESUMED','RUN_FAILED')\nORDER BY occurred_at DESC LIMIT 50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Transfer sizes (bytes)",
+      "description": "Global model size per round and the size of each client's accepted update.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT recorded_at AS time, metric_name AS metric, value FROM metrics\nWHERE run_id = '$run_id' AND client_id IS NULL AND message_type IS NULL AND metric_name IN ('model_bytes')\nORDER BY 1"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT received_at AS time, 'upload ' || client_id AS metric, payload_bytes::float8 AS value\nFROM updates WHERE run_id = '$run_id' ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "pointSize": 6
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Transfer time and round trips by message type (ms)",
+      "description": "Recorded by the gateway in distributed runs; empty for local simulations.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT recorded_at AS time, message_type || ' ' || metric_name AS metric, value FROM metrics\nWHERE run_id = '$run_id' AND message_type IS NOT NULL AND metric_name IN ('transfer_ms', 'rtt_ms')\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "pointSize": 6
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ]
+}
