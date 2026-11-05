@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Badge, Cell, Empty, Row, Table } from "@/components/ui";
+import { Badge, Cell, Empty, PageHeader, Row, Table } from "@/components/ui";
 import { requireUser } from "@/lib/auth/guard";
 import { fmtTime, shortId } from "@/lib/format";
 import { listRuns } from "@/lib/queries";
@@ -12,7 +12,7 @@ export default async function Runs() {
   const { total, runs } = await listRuns({ limit: 100, offset: 0 });
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Runs</h1>
+      <PageHeader title="Runs" description="Every training run, newest first. Open one for its configuration, versions, metric charts and final model." />
       {runs.length === 0 ? (
         <Empty>No runs yet.</Empty>
       ) : (

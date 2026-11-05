@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Empty } from "@/components/ui";
+import { Empty, PageHeader } from "@/components/ui";
 import { RunPicker } from "@/components/run-picker";
 import { requireUser } from "@/lib/auth/guard";
 import { defaultRunId, getRound, getRun, listRounds } from "@/lib/queries";
@@ -18,7 +18,7 @@ export default async function Rounds({ searchParams }: PageProps<"/app/rounds">)
   const detail = latest ? await getRound(run.run_id, latest.round_id) : null;
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-bold">Live round</h1>
+      <PageHeader title="Live round" description="Follow the current round of a run as it happens: who has reported, who dropped out, and when the round closes." />
       <RunPicker base="/app/rounds" param="run" current={run.run_id} />
       <LiveRound
         key={run.run_id}

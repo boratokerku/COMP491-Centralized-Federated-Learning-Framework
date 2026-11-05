@@ -17,3 +17,16 @@ export function fmtBytes(value: number | null | undefined): string {
 }
 
 export const shortId = (id: string) => id.slice(0, 8);
+
+/** "2 d 3 h", "4 h 05 min", "3:07" for a time left until a deadline. */
+export function fmtRemaining(ms: number): string {
+  if (ms <= 0) return "deadline passed";
+  const total = Math.round(ms / 1000);
+  const d = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (d > 0) return `${d} d ${h} h`;
+  if (h > 0) return `${h} h ${String(m).padStart(2, "0")} min`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}

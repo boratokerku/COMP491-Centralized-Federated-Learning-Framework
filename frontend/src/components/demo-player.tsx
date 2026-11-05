@@ -37,9 +37,9 @@ function Curve({ demo, completed }: { demo: DemoRun; completed: number }) {
     { label: "ROC-AUC", color: "#d97706", pick: (r: DemoRun["rounds"][number]) => r.rocAuc },
   ];
   return (
-    <figure className="space-y-1">
-      <figcaption className="text-sm font-medium">Global model quality after each round</figcaption>
-      <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label="F1 and ROC-AUC of the global model by round" className="w-full max-w-xl">
+    <figure className="space-y-2">
+      <figcaption className="font-medium">Global model quality after each round</figcaption>
+      <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label="F1 and ROC-AUC of the global model by round" className="w-full">
         {[0, 0.5, 1].map((t) => (
           <g key={t}>
             <line x1={pad.l} x2={w - pad.r} y1={sy(t)} y2={sy(t)} stroke="currentColor" opacity={0.12} />
@@ -111,14 +111,15 @@ export function DemoPlayer({ demo }: { demo: DemoRun }) {
   const count = demo.clients.length;
   const slot = (i: number) => (W / count) * (i + 0.5);
   const coordinatorDown = frame.coordinator === "down";
-  const button = "rounded border border-border px-3 py-1 text-sm hover:border-accent";
+  const button = "rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-surface disabled:opacity-40";
 
   return (
     <div className="space-y-6">
+      <div className="space-y-4 rounded-xl border border-border bg-surface p-4">
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          className={button}
+          className="rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-white hover:opacity-90"
           onClick={() => {
             if (index >= last) {
               setIndex(0);
@@ -144,7 +145,7 @@ export function DemoPlayer({ demo }: { demo: DemoRun }) {
             <option value={2}>2x</option>
           </select>
         </label>
-        <span className="text-sm text-muted">
+        <span className="ml-auto rounded-full bg-accent-soft px-3 py-1 text-sm font-medium text-accent">
           Round {frame.round} of {demo.rounds.length}
         </span>
       </div>
@@ -156,14 +157,16 @@ export function DemoPlayer({ demo }: { demo: DemoRun }) {
         value={index}
         onChange={(e) => { setChoice(false); setIndex(Number(e.target.value)); }}
         aria-label="Position in the replay"
-        className="w-full"
+        className="w-full accent-[var(--accent)]"
       />
+      </div>
 
-      <p aria-live="polite" className="min-h-12 rounded border border-border p-3 text-sm">
+      <p aria-live="polite" className="min-h-16 rounded-xl border-l-4 border-accent bg-accent-soft p-4 text-base">
         {frame.caption}
       </p>
 
-      <svg viewBox={`0 0 ${W} 250`} role="img" aria-label="The coordinator and the clients" className="w-full max-w-xl">
+      <div className="grid items-start gap-8 lg:grid-cols-2">
+      <svg viewBox={`0 0 ${W} 250`} role="img" aria-label="The coordinator and the clients" className="w-full">
         {demo.clients.map((c, i) => (
           <line
             key={c}
@@ -218,10 +221,11 @@ export function DemoPlayer({ demo }: { demo: DemoRun }) {
       </svg>
 
       <Curve demo={demo} completed={frame.completed} />
+      </div>
 
-      <details className="text-sm">
-        <summary className="cursor-pointer text-muted">Results of every round as a table</summary>
-        <table className="mt-2 w-full text-left">
+      <details className="rounded-xl border border-border text-sm">
+        <summary className="cursor-pointer px-4 py-3 font-medium">Results of every round as a table</summary>
+        <table className="w-full border-t border-border text-left">
           <thead>
             <tr className="border-b border-border text-muted">
               <th className="px-2 py-1">Round</th>

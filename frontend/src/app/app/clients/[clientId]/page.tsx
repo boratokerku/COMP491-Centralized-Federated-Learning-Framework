@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Badge, Cell, Empty, Facts, Row, Section, Table } from "@/components/ui";
+import { Badge, Cell, Empty, Facts, PageHeader, Row, Section, Table } from "@/components/ui";
 import { requireUser } from "@/lib/auth/guard";
 import { fmtNumber, fmtTime, shortId } from "@/lib/format";
 import { getClient } from "@/lib/queries";
@@ -16,7 +16,7 @@ export default async function ClientDetail({ params }: PageProps<"/app/clients/[
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-bold">{client.client_id}</h1>
+      <PageHeader title={client.client_id} description="Compatibility checks, the rounds this client took part in, and the metrics it reported." />
       <Facts
         items={[
           ["Status", <Badge key="s" value={client.status} />],
