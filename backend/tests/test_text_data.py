@@ -41,3 +41,21 @@ def test_partition_after_dedupe_has_no_shared_text():
     parts = [p.test] + [getattr(c, s) for c in p.clients for s in ("train", "val", "test")]
     seen = [t for part in parts for t in part["text"]]
     assert len(seen) == len(set(seen)) == 400
+
+
+def test_text_partition_files_are_byte_identical_for_the_same_seed(tmp_path):
+    from cfl.tasks.partition import format_summary, summarize, write_partitions
+
+    texts = [f'message {i}, with "quotes" and NA' for i in range(300)]
+    labels = ["spam" if i % 7 == 0 else "ham" for i in range(300)]
+    df = pd.DataFrame({"label": labels, "text": texts})
+    outs = []
+    for name in ("a", "b"):
+        p = iid_partition(df, encode_labels, num_clients=3, seed=11)
+        write_partitions(p, tmp_path / name, summarize(p, encode_labels, "sms_spam", seed=11))
+        outs.append(tmp_path / name)
+    files = sorted(f.relative_to(outs[0]) for f in outs[0].rglob("*") if f.is_file())
+    assert len(files) == 11
+    for f in files:
+        assert (outs[0] / f).read_bytes() == (outs[1] / f).read_bytes(), f
+    assert "sms_spam partition" in format_summary(summarize(p, encode_labels, "sms_spam"))

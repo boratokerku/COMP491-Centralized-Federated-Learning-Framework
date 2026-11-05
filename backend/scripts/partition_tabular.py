@@ -12,10 +12,10 @@ Usage (from the repository root):
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
+from cfl.tasks.partition import format_summary
 from cfl.tasks.tabular.partition import iid_partition, summarize, write_partitions
 from cfl.tasks.tabular.preprocessing import load_dataset_config, read_raw
 
@@ -29,14 +29,25 @@ def _from_root(path: Path) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--config", type=Path, default=Path("backend/configs/datasets/bank_marketing.yaml")
+        "--config",
+        type=Path,
+        default=Path("backend/configs/datasets/bank_marketing.yaml"),
+        help="dataset config (columns, categories, scaling statistics)",
     )
-    parser.add_argument("--num-clients", type=int, default=4)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--test-size", type=float, default=0.2, help="held-out share")
-    parser.add_argument("--local-val-size", type=float, default=0.1, help="per-client share")
-    parser.add_argument("--local-test-size", type=float, default=0.2, help="per-client share")
-    parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--num-clients", type=int, default=4, help="number of client sites")
+    parser.add_argument("--seed", type=int, default=42, help="seed; same seed, same files")
+    parser.add_argument(
+        "--test-size", type=float, default=0.2, help="share held out as the server's test set"
+    )
+    parser.add_argument(
+        "--local-val-size", type=float, default=0.1, help="share of each client's data for val"
+    )
+    parser.add_argument(
+        "--local-test-size", type=float, default=0.2, help="share of each client's data for test"
+    )
+    parser.add_argument(
+        "--out", type=Path, default=None, help="output folder (default: data/<modality>/partitions)"
+    )
     args = parser.parse_args()
 
     config = load_dataset_config(_from_root(args.config))
@@ -60,8 +71,7 @@ def main() -> int:
     summary = summarize(partitioning, config, **settings)
     out = _from_root(args.out) if args.out else REPO_ROOT / "data/tabular/partitions" / config.name
     write_partitions(partitioning, config, out, summary)
-    print(json.dumps(summary, indent=2))
-    print(f"Written to {out}")
+    print(format_summary(summary, out))
     return 0
 
 
