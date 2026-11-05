@@ -87,6 +87,9 @@ services:
       DATABASE_URL: postgresql://cfl_web:${CFL_WEB_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-cfl}
       REPORTS_DIR: /models
       PUBLIC_URL: https://${CFL_WEB_DOMAIN:-localhost}
+      # Internal-area login (frontend/README.md). Without both, the login form stays disabled.
+      SESSION_SECRET: ${CFL_WEB_SESSION_SECRET:-}
+      WEB_USERS: ${CFL_WEB_USERS:-}
     volumes:
       - models:/models:ro
     depends_on:
