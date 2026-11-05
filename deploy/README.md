@@ -17,7 +17,7 @@ Everything runs in containers built from `backend/Dockerfile` (`server` and `cli
 | `coordinator` | `cfl-server` | `python -m cfl.coordinator`: resumes running runs, drives the rounds. Safe to stop at any time. |
 | `gateway` | `cfl-server` | Client API (FastAPI). |
 | `web` | `cfl-web` | Website, optional profile `web` (Hilal). |
-| `grafana` | `grafana/grafana` | Dashboards on the read-only role, served under `/grafana/`. |
+| `grafana` | `grafana/grafana` | Dashboards on the read-only role, served under `/grafana/` and only for visitors with a website session (see below). |
 | `caddy` | `caddy:2.8` | Only service with published ports. Let's Encrypt for public hostnames, its own CA for `*.localhost`. |
 
 ## Server: local test
@@ -127,3 +127,20 @@ University clusters that only allow Apptainer can build from the same archive: `
 - All containers except Caddy and PostgreSQL run as the unprivileged user `cfl` (uid 10001).
 - `cfl_web` can only `SELECT`, and cannot read `clients.token_hash` (migration 0002).
 - Secrets live in `deploy/.env` and `deploy/client/token.txt`, both gitignored.
+
+## Grafana behind the website login
+
+Grafana has no host port. Caddy sends every `/grafana*` request to the website first
+(`forward_auth` to `/api/auth/verify`): without a session the visitor is redirected to the login
+form; with one, Caddy passes the user name in `X-WEBAUTH-USER` and Grafana (auth proxy mode)
+signs that user in as a **viewer**. Anonymous access is off, and a header sent by the visitor
+is dropped. The dashboard "CFL Run Overview" (`grafana/provisioning/dashboards/cfl-run.json`,
+run selector at the top) is also embedded on the website under `/app/dashboards`.
+
+- `/grafana/` needs the `web` profile: without the website running, Caddy cannot verify
+  sessions and Grafana stays closed.
+- After changing the `Caddyfile`, reload it: `docker compose -f deploy/docker-compose.yml exec caddy caddy reload --config /etc/caddy/Caddyfile`.
+- Because the proxy header decides who is logged in, the Grafana admin account cannot sign in
+  through Caddy. Administer Grafana from inside the network, for example
+  `docker compose -f deploy/docker-compose.yml exec grafana curl -u admin:$GRAFANA_ADMIN_PASSWORD localhost:3000/grafana/api/...`
+  (`GF_SERVER_SERVE_FROM_SUB_PATH` is on).
