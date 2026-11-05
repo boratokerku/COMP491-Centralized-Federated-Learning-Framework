@@ -31,6 +31,8 @@ certs/
 data/*
 !data/README.md
 runs/
+# ...but the website has pages and API routes that are called runs
+!frontend/src/app/**/runs/
 artifacts/
 *.safetensors
 *.onnx
