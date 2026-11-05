@@ -22,6 +22,10 @@
 			request_header -X-WEBAUTH-USER
 			forward_auth web:3000 {
 				uri /api/auth/verify?redirect=1
+				# The check is a plain request. Without this, a WebSocket upgrade (Grafana Live) would
+				# be sent to the website as an upgrade too and fail with 502.
+				header_up -Connection
+				header_up -Upgrade
 				copy_headers X-Auth-User>X-WEBAUTH-USER
 			}
 			reverse_proxy grafana:3000

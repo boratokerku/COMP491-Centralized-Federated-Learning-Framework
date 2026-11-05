@@ -66,7 +66,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/.*/",
           "values": false
         },
         "textMode": "value",
@@ -146,7 +146,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/.*/",
           "values": false
         },
         "textMode": "value",
@@ -200,7 +200,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/.*/",
           "values": false
         },
         "textMode": "value",
@@ -254,7 +254,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/.*/",
           "values": false
         },
         "textMode": "value",
@@ -312,7 +312,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/.*/",
           "values": false
         },
         "textMode": "value",
@@ -417,7 +417,7 @@
     },
     {
       "id": 7,
-      "type": "timeseries",
+      "type": "trend",
       "title": "Round duration and phases (ms)",
       "description": "Coordinator timing per round (planning/interfaces.md, section 4).",
       "datasource": {
@@ -437,10 +437,10 @@
             "type": "grafana-postgresql-datasource",
             "uid": "cfl-postgres"
           },
-          "format": "time_series",
+          "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT recorded_at AS time, metric_name AS metric, value FROM metrics\nWHERE run_id = '$run_id' AND client_id IS NULL AND message_type IS NULL AND metric_name IN ('round_duration_ms', 'waiting_ms', 'aggregation_ms', 'evaluation_ms', 'load_ms', 'write_ms')\nORDER BY 1"
+          "rawSql": "SELECT round_id AS \"Round\",\n  max(value) FILTER (WHERE metric_name = 'round_duration_ms') AS \"round duration\",\n  max(value) FILTER (WHERE metric_name = 'waiting_ms') AS \"waiting for clients\",\n  max(value) FILTER (WHERE metric_name = 'aggregation_ms') AS \"aggregation\",\n  max(value) FILTER (WHERE metric_name = 'evaluation_ms') AS \"evaluation\",\n  max(value) FILTER (WHERE metric_name = 'load_ms') AS \"load\",\n  max(value) FILTER (WHERE metric_name = 'write_ms') AS \"write\"\nFROM metrics\nWHERE run_id = '$run_id' AND client_id IS NULL AND message_type IS NULL AND round_id IS NOT NULL\n  AND metric_name IN ('round_duration_ms', 'waiting_ms', 'aggregation_ms', 'evaluation_ms', 'load_ms', 'write_ms')\nGROUP BY round_id ORDER BY round_id"
         }
       ],
       "fieldConfig": {
@@ -453,9 +453,27 @@
             "pointSize": 6
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Round"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "options": {
+        "xField": "Round",
         "legend": {
           "displayMode": "list",
           "placement": "bottom"
@@ -467,7 +485,7 @@
     },
     {
       "id": 8,
-      "type": "timeseries",
+      "type": "trend",
       "title": "Global model metrics (held-out test set)",
       "description": "",
       "datasource": {
@@ -487,10 +505,10 @@
             "type": "grafana-postgresql-datasource",
             "uid": "cfl-postgres"
           },
-          "format": "time_series",
+          "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT recorded_at AS time, metric_name AS metric, value FROM metrics\nWHERE run_id = '$run_id' AND client_id IS NULL AND message_type IS NULL AND metric_name IN ('global_f1', 'global_roc_auc', 'global_pr_auc', 'global_accuracy')\nORDER BY 1"
+          "rawSql": "SELECT round_id AS \"Round\",\n  max(value) FILTER (WHERE metric_name = 'global_f1') AS \"F1\",\n  max(value) FILTER (WHERE metric_name = 'global_roc_auc') AS \"ROC-AUC\",\n  max(value) FILTER (WHERE metric_name = 'global_pr_auc') AS \"PR-AUC\",\n  max(value) FILTER (WHERE metric_name = 'global_accuracy') AS \"accuracy\"\nFROM metrics\nWHERE run_id = '$run_id' AND client_id IS NULL AND message_type IS NULL AND round_id IS NOT NULL\n  AND metric_name IN ('global_f1', 'global_roc_auc', 'global_pr_auc', 'global_accuracy')\nGROUP BY round_id ORDER BY round_id"
         }
       ],
       "fieldConfig": {
@@ -500,14 +518,32 @@
             "drawStyle": "line",
             "lineWidth": 2,
             "showPoints": "always",
-            "pointSize": 6
-          },
-          "min": 0,
-          "max": 1
+            "pointSize": 6,
+            "axisSoftMin": 0,
+            "axisSoftMax": 1
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Round"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "options": {
+        "xField": "Round",
         "legend": {
           "displayMode": "list",
           "placement": "bottom"
@@ -594,9 +630,9 @@
     },
     {
       "id": 11,
-      "type": "timeseries",
+      "type": "trend",
       "title": "Transfer sizes (bytes)",
-      "description": "Global model size per round and the size of each client's accepted update.",
+      "description": "Size of the global model sent to each client, and the total size of the client updates received, per round.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "cfl-postgres"
@@ -614,21 +650,10 @@
             "type": "grafana-postgresql-datasource",
             "uid": "cfl-postgres"
           },
-          "format": "time_series",
+          "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT recorded_at AS time, metric_name AS metric, value FROM metrics\nWHERE run_id = '$run_id' AND client_id IS NULL AND message_type IS NULL AND metric_name IN ('model_bytes')\nORDER BY 1"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "cfl-postgres"
-          },
-          "format": "time_series",
-          "rawQuery": true,
-          "editorMode": "code",
-          "rawSql": "SELECT received_at AS time, 'upload ' || client_id AS metric, payload_bytes::float8 AS value\nFROM updates WHERE run_id = '$run_id' ORDER BY 1"
+          "rawSql": "SELECT r.round_id AS \"Round\",\n  max(m.value) FILTER (WHERE m.metric_name = 'model_bytes') AS \"global model (per client)\",\n  (SELECT sum(u.payload_bytes) FROM updates u WHERE u.run_id = r.run_id AND u.round_id = r.round_id)::float8 AS \"client updates received (sum)\"\nFROM rounds r LEFT JOIN metrics m ON m.run_id = r.run_id AND m.round_id = r.round_id\n  AND m.client_id IS NULL AND m.message_type IS NULL\nWHERE r.run_id = '$run_id' GROUP BY r.run_id, r.round_id ORDER BY r.round_id"
         }
       ],
       "fieldConfig": {
@@ -641,9 +666,27 @@
             "pointSize": 6
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Round"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "options": {
+        "xField": "Round",
         "legend": {
           "displayMode": "list",
           "placement": "bottom"
