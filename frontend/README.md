@@ -4,11 +4,14 @@ Next.js web application (WP6, owner: Hilal): public project site plus a login-pr
 area (live round view, update inbox, event log, metrics panels, results, human-readable reports,
 client compatibility status). Decisions: `planning/interfaces.md`, sections 6 and 8.
 
-Not scaffolded yet. To start:
+Scaffolded with Next.js (TypeScript, App Router, Tailwind). The public area is in place:
+`/` (project home and weekly progress), `/docs`, `/results`, `/team`. The internal area (`/app`)
+is still to do. Page structure: `planning/scope.md`, section 4.1.
 
-```bash
-npx create-next-app@latest . --ts --eslint --app --src-dir
-```
+Weekly updates: add an entry at the top of `updates` in `src/content/site.ts`.
+
+Node is only needed for local development (`npm install && npm run dev`). The Docker build
+does not need it on the host.
 
 ## Contract with the deployment (`deploy/docker-compose.yml`, service `web`)
 
