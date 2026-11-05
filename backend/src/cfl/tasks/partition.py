@@ -119,6 +119,46 @@ def summarize(partitioning: Partitioning, labels: LabelFn, dataset: str, **setti
     }
 
 
+def format_summary(summary: dict, out_dir: Path | None = None) -> str:
+    """Readable table of a summary(): rows, positives and positive ratio per split, so a skewed
+    split is visible at a glance. The full summary is in summary.json."""
+    width = 72
+    lines = [
+        "=" * width,
+        f"{summary['dataset']} partition: {summary.get('partition', '')}, "
+        f"seed={summary.get('seed', '-')}, clients={len(summary['clients'])}",
+    ]
+    if "duplicates_removed" in summary:
+        lines.append(
+            f"{summary['raw_rows']:,d} raw rows, "
+            f"{summary['duplicates_removed']:,d} duplicates removed"
+        )
+    lines += [
+        "=" * width,
+        f"{'split':<28}{'rows':>12}{'positive':>14}{'positive %':>18}",
+        "-" * width,
+    ]
+    total = 0
+
+    def row(label: str, stats: dict) -> None:
+        nonlocal total
+        total += stats["rows"]
+        lines.append(
+            f"{label:<28}{stats['rows']:>12,d}{stats['positive']:>14,d}"
+            f"{stats['positive_ratio'] * 100:>17.2f}%"
+        )
+
+    for client_id, splits in sorted(summary["clients"].items()):
+        for split in CLIENT_SPLITS:
+            row(f"{client_id} {split}", splits[split])
+    lines.append("-" * width)
+    row("held-out test (server)", summary["test"])
+    lines += ["=" * width, f"total rows: {total:,d}"]
+    if out_dir is not None:
+        lines.append(f"written to: {out_dir} (details in {SUMMARY_FILE})")
+    return "\n".join(lines)
+
+
 def write_partitions(
     partitioning: Partitioning, out_dir: Path, summary: dict, sep: str = ","
 ) -> None:

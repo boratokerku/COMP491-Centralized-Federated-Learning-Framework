@@ -117,3 +117,29 @@ def test_refuses_to_overwrite_foreign_directory(tmp_path):
     with pytest.raises(FileExistsError):
         write_partitions(p, CONFIG, tmp_path, summarize(p, CONFIG))
     assert (tmp_path / "notes.txt").exists()
+
+
+def test_same_seed_produces_identical_files_on_disk(tmp_path):
+    """Reproducibility at the file level: a site that re-runs the partition script with the
+    published seed gets byte-identical CSVs, not just equal row sets."""
+    written = []
+    for name in ("run_a", "run_b"):
+        p = iid_partition(_frame(n=500), CONFIG, num_clients=3, seed=42)
+        out = tmp_path / name
+        write_partitions(p, CONFIG, out, summarize(p, CONFIG, seed=42, num_clients=3))
+        written.append(out)
+    a, b = written
+    files = sorted(f.relative_to(a) for f in a.rglob("*") if f.is_file())
+    assert len(files) == 3 * 3 + 2  # train/val/test per client, held-out test.csv, summary
+    for f in files:
+        assert (a / f).read_bytes() == (b / f).read_bytes(), f
+
+
+def test_format_summary_lists_every_split():
+    from cfl.tasks.partition import format_summary
+
+    p = iid_partition(_frame(), CONFIG, num_clients=2, seed=0)
+    text = format_summary(summarize(p, CONFIG, seed=0))
+    for split in ("client_0 train", "client_0 val", "client_1 test", "held-out test (server)"):
+        assert split in text
+    assert "total rows: 1,000" in text
