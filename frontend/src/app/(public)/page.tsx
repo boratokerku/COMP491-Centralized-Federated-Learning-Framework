@@ -5,23 +5,26 @@ import { updates } from "@/content/site";
 const features = [
   {
     title: "Compatibility",
+    tone: "border-t-danger text-danger",
     text: "A conformance check catches clients whose feature order, units, encodings or labels differ, before they join a run.",
   },
   {
     title: "Robustness",
+    tone: "border-t-warning text-warning",
     text: "Slow clients, dropouts, duplicate or stale updates, and coordinator crashes that resume from stored state instead of round zero.",
   },
   {
     title: "Observability",
+    tone: "border-t-accent text-accent",
     text: "Event logs, latency tracking and a reproducible report at the end of every run.",
   },
 ];
 
 const steps = [
-  ["1", "Open", "The coordinator opens a round and each client downloads the current global model through the gateway."],
-  ["2", "Train", "Each client trains on its own data. The data never leaves its machine."],
-  ["3", "Report", "Clients upload only their model updates through the gateway, which stores them."],
-  ["4", "Combine", "The coordinator reads the stored updates and averages them into a new global model."],
+  ["1", "Open", "bg-danger", "text-danger", "The coordinator opens a round and each client downloads the current global model through the gateway."],
+  ["2", "Train", "bg-warning", "text-warning", "Each client trains on its own data. The data never leaves its machine."],
+  ["3", "Report", "bg-accent", "text-accent", "Clients upload only their model updates through the gateway, which stores them."],
+  ["4", "Combine", "bg-mint", "text-mint", "The coordinator reads the stored updates and averages them into a new global model."],
 ];
 
 export default function Home() {
@@ -50,7 +53,7 @@ export default function Home() {
         </p>
         <div className="grid gap-4 sm:grid-cols-3">
           {features.map((f) => (
-            <Card key={f.title}>
+            <Card key={f.title} className={`border-t-2 ${f.tone}`}>
               <h3 className="font-semibold">{f.title}</h3>
               <p className="mt-2 text-sm text-muted">{f.text}</p>
             </Card>
@@ -61,12 +64,12 @@ export default function Home() {
       <section className="space-y-4">
         <h2 className="text-2xl font-semibold">How a round works</h2>
         <ol className="grid gap-4 sm:grid-cols-4">
-          {steps.map(([n, title, text]) => (
+          {steps.map(([n, title, fill, color, text]) => (
             <li key={n} className="space-y-2">
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-accent-soft text-sm font-semibold text-accent">
+              <span className={`grid h-8 w-8 place-items-center rounded-full text-sm font-semibold text-background ${fill}`}>
                 {n}
               </span>
-              <h3 className="font-semibold">{title}</h3>
+              <h3 className={`font-semibold ${color}`}>{title}</h3>
               <p className="text-sm text-muted">{text}</p>
             </li>
           ))}

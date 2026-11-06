@@ -23,14 +23,15 @@ const GATE = { x: 6, y: 122, w: 408, h: 34 };
 const CLIENT_TOP = 216;
 
 const GREEN = "#059669";
-const RED = "#dc2626";
-const AMBER = "#d97706";
+const BLUE = "var(--accent)";
+const RED = "var(--danger)";
+const AMBER = "var(--warning)";
 const NODE_COLORS: Record<ClientState, string> = {
-  idle: "#94a3b8",
-  checking: "var(--accent)",
+  idle: "var(--muted)",
+  checking: BLUE,
   blocked: RED,
   training: AMBER,
-  sending: "var(--accent)",
+  sending: BLUE,
   sent: GREEN,
   dropout: RED,
   late: RED,
@@ -71,7 +72,7 @@ function Curve({ demo, completed }: { demo: DemoRun; completed: number }) {
   const shown = demo.rounds.slice(0, completed);
   const latest = shown.at(-1);
   const lines = [
-    { label: "F1", color: "var(--accent)", pick: (r: DemoRun["rounds"][number]) => r.f1 },
+    { label: "F1", color: BLUE, pick: (r: DemoRun["rounds"][number]) => r.f1 },
     { label: "PR-AUC", color: AMBER, pick: (r: DemoRun["rounds"][number]) => r.prAuc },
   ];
   return (
@@ -190,7 +191,7 @@ function PacketShape({ packet }: { packet: Packet }) {
       return (
         <>
           <circle r={8} fill={RED} />
-          <text textAnchor="middle" y={4} fontSize={12} fontWeight={700} fill="white">
+          <text textAnchor="middle" y={4} fontSize={12} fontWeight={700} fill="var(--background)">
             !
           </text>
         </>
@@ -400,7 +401,7 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
             {out && (
               <g transform={`translate(${x + boxW / 2 - 4} ${CLIENT_TOP + 4})`} className="demo-pop">
                 <circle r={9} fill={RED} />
-                <path d="M-3.5 -3.5 L3.5 3.5 M3.5 -3.5 L-3.5 3.5" stroke="white" strokeWidth={2} />
+                <path d="M-3.5 -3.5 L3.5 3.5 M3.5 -3.5 L-3.5 3.5" stroke="var(--background)" strokeWidth={2} />
               </g>
             )}
             <g transform={`translate(${x - 31} ${CLIENT_TOP + 67})`} fill="currentColor">

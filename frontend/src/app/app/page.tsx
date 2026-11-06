@@ -72,7 +72,7 @@ export default async function Overview() {
               </p>
             </div>
             <div className="flex gap-2 text-sm">
-              <Link href={`/app/rounds?run=${run.run_id}`} className="rounded-lg bg-accent px-3 py-1.5 font-medium text-white hover:opacity-90">
+              <Link href={`/app/rounds?run=${run.run_id}`} className="rounded-lg bg-accent px-3 py-1.5 font-medium text-background hover:opacity-90">
                 Live round
               </Link>
               <Link href={`/app/runs/${run.run_id}`} className="rounded-lg border border-border px-3 py-1.5 hover:bg-surface">
@@ -89,7 +89,7 @@ export default async function Overview() {
         <Section title="Needs attention">
           <ul className="space-y-2 text-sm">
             {failedRounds > 0 && (
-              <li className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+              <li className="rounded-lg border border-danger bg-danger-soft p-3">
                 {failedRounds} failed round{failedRounds > 1 ? "s" : ""} in the latest run.{" "}
                 <Link href={`/app/runs/${run?.run_id}`} className="underline">
                   See why
@@ -97,7 +97,7 @@ export default async function Overview() {
               </li>
             )}
             {failedConformance.map((c) => (
-              <li key={c.client_id} className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+              <li key={c.client_id} className="rounded-lg border border-danger bg-danger-soft p-3">
                 {c.client_id} failed the conformance check ({c.latest_conformance?.reason_code ?? "no reason recorded"}).{" "}
                 <Link href={`/app/clients/${encodeURIComponent(c.client_id)}`} className="underline">
                   Details

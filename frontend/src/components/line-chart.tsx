@@ -11,7 +11,7 @@ function tick(v: number): string {
 }
 const H = 240;
 const PAD = { l: 44, r: 12, t: 12, b: 32 };
-const COLORS = ["#1d4ed8", "#d97706", "#059669", "#dc2626", "#7c3aed"];
+const COLORS = ["#0080fe", "#ffbf00", "#059669", "#ff003f", "#9ba5a1"];
 
 // Small dependency-free SVG line chart, rendered on the server.
 export function LineChart({
