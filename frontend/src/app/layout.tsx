@@ -1,5 +1,18 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import "./globals.css";
+
+// Medium also covers 600, so `font-semibold` and `font-medium` both render as Medium. Anything
+// heavier (the 650 of headings, `font-bold`) renders as Bold.
+const stolzl = localFont({
+  src: [
+    { path: "../fonts/stolzl_book.otf", weight: "400", style: "normal" },
+    { path: "../fonts/stolzl_medium.otf", weight: "500 600", style: "normal" },
+    { path: "../fonts/stolzl_bold.otf", weight: "700", style: "normal" },
+  ],
+  variable: "--font-stolzl",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -12,7 +25,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className={`${stolzl.variable} h-full`}>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

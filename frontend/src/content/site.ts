@@ -6,7 +6,7 @@ export const nav = [
   { href: "/demo", label: "How it works" },
   { href: "/docs", label: "Documentation" },
   { href: "/results", label: "Results" },
-  { href: "/team", label: "Team" },
+  { href: "/team", label: "Team FedUp and Advisors" },
 ];
 
 export const team = [
