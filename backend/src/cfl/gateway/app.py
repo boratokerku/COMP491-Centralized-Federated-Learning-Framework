@@ -49,9 +49,12 @@ from cfl.protocol.messages import (
     RegisterRequest,
     RegisterResponse,
     TaskAssignment,
+    TransferReport,
     UpdateAck,
     UpdateMetadata,
 )
+
+CONTROL_MESSAGES = frozenset({"register", "conformance", "task"})
 
 # HTTP status for each intake decision (planning/api-spec.md, section 2.4).
 INTAKE_STATUS = {
@@ -199,10 +202,12 @@ def create_app(
         event_type: str | None = None,
     ) -> None:
         """Communication metrics (planning/interfaces.md, section 4) and, for downloads, an
-        event. Accepted uploads already get their UPDATE_ACCEPTED event from the intake."""
-        now, duration_ms = clock(), (time.perf_counter() - started) * 1000
+        event. Accepted uploads already get their UPDATE_ACCEPTED event from the intake.
+        `gateway_ms` is time inside the gateway; the network time is in `transfer_ms`, which
+        the client reports through POST /transfer."""
+        now, gateway_ms = clock(), (time.perf_counter() - started) * 1000
         if event_type is not None:
-            payload = {"message_type": message_type, "bytes": size, "duration_ms": duration_ms}
+            payload = {"message_type": message_type, "bytes": size}
             state().add_event(EventRecord(event_type, now, run_id, round_id, client_id, payload))
         state().add_metrics(
             [
@@ -218,8 +223,8 @@ def create_app(
                 ),
                 MetricRecord(
                     run_id,
-                    "transfer_ms",
-                    duration_ms,
+                    "gateway_ms",
+                    gateway_ms,
                     "ms",
                     now,
                     round_id,
@@ -439,6 +444,26 @@ def create_app(
             event_type="MODEL_DOWNLOADED",
         )
         return response
+
+    # -- 3.8 transfer report (addition) ----------------------------------------------------------
+    @app.post("/transfer", status_code=204)
+    def report_transfer(body: TransferReport, client: RegisteredClient):
+        get_run(body.run_id)
+        p = t.round_participants
+        with db().connect() as conn:
+            participant = conn.execute(
+                select(exists().where(p.c.run_id == body.run_id, p.c.client_id == client.client_id))
+            ).scalar()
+        if not participant:
+            raise GatewayError(403, "not_participant", "this client was not selected in the run")
+        now = clock()
+        scope = (now, body.round_id, client.client_id, body.message_type)
+        rows = [MetricRecord(body.run_id, "transfer_ms", body.duration_ms, "ms", *scope)]
+        # The gateway records the size of the file transfers itself.
+        if body.message_type in CONTROL_MESSAGES and body.message_bytes is not None:
+            size = float(body.message_bytes)
+            rows.append(MetricRecord(body.run_id, "message_bytes", size, "bytes", *scope))
+        state().add_metrics(rows)
 
     # -- 3.6 update upload --------------------------------------------------------------------
     @app.post("/update", response_model=UpdateAck)

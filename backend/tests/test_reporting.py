@@ -236,6 +236,26 @@ def test_communication_summary_groups_by_message_type(state):
     assert comm["update_upload"]["message_bytes"]["max"] == 500.0
 
 
+def test_totals_add_up_bytes_and_reliability_events(state):
+    state.add_metrics(
+        [
+            _metric("message_bytes", 500.0, "bytes", 1, "bank-a", "update_upload"),
+            _metric("message_bytes", 700.0, "bytes", 2, "bank-a", "update_upload"),
+            _metric("message_bytes", 40.0, "bytes", 1, "bank-a", "task"),
+            _metric("client_retry_count", 2.0, "value", 1, "bank-a"),
+            _metric("client_retry_count", 1.0, "value", 2, "bank-b"),
+        ]
+    )
+    summary = build_summary(load_run_data(state, RUN_ID))
+    assert summary["communication_totals"] == {
+        "bytes": 1240.0,
+        "bytes_by_message_type": {"task": 40.0, "update_upload": 1200.0},
+    }
+    assert summary["reliability"]["retries"] == 3.0
+    assert summary["reliability"]["failed_rounds"] == 1
+    assert summary["reliability"]["dropouts"] >= 1
+
+
 def test_summary_is_deterministic(state):
     data = load_run_data(state, RUN_ID)
     assert json.dumps(build_summary(data), sort_keys=True) == json.dumps(
@@ -277,7 +297,7 @@ def test_markdown_explains_the_run_without_the_console(state):
         "![global_metrics.png](plots/global_metrics.png)",
     ):
         assert expected in text
-    assert "No per-message gateway metrics" in text
+    assert "No per-message metrics" in text
 
 
 def test_metrics_csv_has_every_row(state):

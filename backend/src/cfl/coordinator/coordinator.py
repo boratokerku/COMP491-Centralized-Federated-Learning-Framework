@@ -103,6 +103,8 @@ def _metric_rows(
     for name, value in values.items():
         if name.endswith("_s"):
             name, value, unit = f"{name[:-2]}_ms", value * 1000.0, "ms"
+        elif name.endswith("_ms"):
+            unit = "ms"
         elif name.endswith("bytes") or name.endswith("_read"):
             unit = "bytes"
         elif name.startswith(("updates_", "total_")):
