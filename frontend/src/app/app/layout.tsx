@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { logout } from "@/app/login/actions";
 import { NavLink } from "@/components/nav-link";
+import { Logo } from "@/components/ui";
 import { currentUser } from "@/lib/auth/guard";
 
 const tabs = [
@@ -26,9 +27,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 pt-3">
           <div className="flex items-center gap-3">
             <Link href="/app" className="flex items-center gap-2 font-semibold">
-              <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-xs font-bold text-background">
-                FL
-              </span>
+              <Logo />
               FedUp
             </Link>
             <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">

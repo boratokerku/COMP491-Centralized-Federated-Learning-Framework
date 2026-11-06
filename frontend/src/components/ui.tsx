@@ -93,6 +93,26 @@ export function Stats({ children }: { children: ReactNode }) {
   return <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{children}</div>;
 }
 
+/** One coordinator linked to three clients. */
+export function Logo() {
+  const clients = [
+    { x: 6, color: "var(--danger)" },
+    { x: 16, color: "var(--warning)" },
+    { x: 26, color: "var(--accent)" },
+  ];
+  return (
+    <svg viewBox="0 0 32 32" aria-hidden className="h-8 w-8 shrink-0">
+      {clients.map((c) => (
+        <line key={c.x} x1={16} y1={8} x2={c.x} y2={25} stroke="var(--muted)" strokeWidth={2} />
+      ))}
+      <circle cx={16} cy={7} r={5} fill="var(--mint)" />
+      {clients.map((c) => (
+        <circle key={c.x} cx={c.x} cy={25} r={4} fill={c.color} />
+      ))}
+    </svg>
+  );
+}
+
 export function ButtonLink({
   href,
   children,
@@ -107,7 +127,7 @@ export function ButtonLink({
       ? "bg-accent text-background hover:opacity-90"
       : "border border-border hover:bg-surface";
   return (
-    <Link href={href} className={`inline-block rounded-lg px-4 py-2 text-sm font-medium ${style}`}>
+    <Link href={href} className={`inline-block rounded-lg px-4 py-2 text-sm font-medium transition motion-safe:hover:-translate-y-0.5 ${style}`}>
       {children}
     </Link>
   );

@@ -1,15 +1,14 @@
 import Link from "next/link";
 import { REPO_URL, nav } from "@/content/site";
 import { NavLink } from "./nav-link";
+import { Logo } from "./ui";
 
 export function SiteHeader() {
   return (
     <header className="top-0 z-10 border-b md:sticky border-border bg-background/90 backdrop-blur">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
         <Link href="/" className="flex items-center gap-2 font-semibold">
-          <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-xs font-bold text-background">
-            FL
-          </span>
+          <Logo />
           FedUp
         </Link>
         <nav aria-label="Main" className="flex flex-wrap items-center gap-1">
