@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { updates } from "@/content/site";
 
 export default function Home() {
@@ -41,6 +42,17 @@ export default function Home() {
         <p>
           The framework covers two modalities: tabular (Bank Marketing) and text (SMS Spam). Runs
           work in a local simulation mode and in a distributed mode over HTTPS.
+        </p>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-xl font-semibold">See it in action</h2>
+        <p>
+          <Link href="/demo" className="text-accent underline">
+            Watch a training run replayed step by step
+          </Link>
+          : clients reporting, a client dropping out, the coordinator restarting and the model
+          getting better round by round.
         </p>
       </section>
 
