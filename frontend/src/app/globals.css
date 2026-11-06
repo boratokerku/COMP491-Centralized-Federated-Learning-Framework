@@ -34,6 +34,11 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* Space for the scrollbar stays reserved, so short pages do not shift sideways. */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
