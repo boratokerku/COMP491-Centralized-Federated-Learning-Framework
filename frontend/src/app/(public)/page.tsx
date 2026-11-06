@@ -1,3 +1,4 @@
+import { FederatedBackground } from "@/components/federated-background";
 import { HeroTyping } from "@/components/hero-typing";
 import type { CSSProperties } from "react";
 import { ButtonLink, Card } from "@/components/ui";
@@ -32,7 +33,8 @@ export default function Home() {
   const [latest, ...earlier] = updates;
   return (
     <div className="space-y-16">
-      <section className="space-y-6 pt-4">
+      <section className="relative isolate space-y-6 pt-4">
+        <FederatedBackground />
         <p className="text-sm font-medium text-accent">COMP 491 capstone project by Team FedUp</p>
         <HeroTyping
           title="Train one model together, without sharing the data"
