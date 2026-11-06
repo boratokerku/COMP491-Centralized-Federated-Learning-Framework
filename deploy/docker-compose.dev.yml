@@ -1,0 +1,25 @@
+# Local only: runs the website with `next dev` behind Caddy, so saved changes in frontend/ show up
+# live on the usual URL, with the real database and login. Never use this on the VM.
+#
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --profile web up -d --build --no-deps web
+#
+# Back to the production build:
+#
+#   docker compose -f deploy/docker-compose.yml --profile web up -d --build --no-deps web
+#
+# After a change to package.json, add -V to the first command to refresh node_modules.
+services:
+  web:
+    image: cfl-web:live
+    build:
+      context: ../frontend
+      target: deps
+    command: npm run dev -- -H 0.0.0.0 -p 3000
+    environment:
+      NEXT_TELEMETRY_DISABLED: 1
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ../frontend:/app
+      # Linux builds of these stay in the container, away from the Mac's.
+      - /app/node_modules
+      - /app/.next
