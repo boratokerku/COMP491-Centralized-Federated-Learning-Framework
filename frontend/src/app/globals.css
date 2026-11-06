@@ -90,6 +90,25 @@ summary:focus-visible {
   color: var(--hover);
 }
 
+/* A dark button with the logo's colours as its border. */
+.login-button {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(90deg, var(--danger), var(--warning), var(--mint), var(--accent)) border-box;
+  color: var(--foreground);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+@media (hover: hover) {
+  .login-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0 14px -3px var(--accent);
+  }
+}
+
 /* Once the sliding pill is in place it takes over the background of the open tab. */
 nav[data-pill] .nav-hover[aria-current="page"] {
   background: transparent;
@@ -317,6 +336,27 @@ nav[data-pill] a[aria-current="page"].border-accent {
 }
 
 /* The "how it works" replay. Only motion lives here, so without it every frame still reads. */
+.demo-pick {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.demo-pick[aria-pressed="true"] {
+  border-color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 15%, transparent);
+}
+
+.demo-pick[aria-pressed="true"] .demo-pick-title {
+  color: var(--tone);
+}
+
+@media (hover: hover) {
+  .demo-pick:hover {
+    border-color: var(--tone);
+  }
+}
+
 .demo-scrub-fill {
   background: linear-gradient(90deg, var(--danger), var(--warning), var(--mint), var(--accent));
 }
@@ -404,6 +444,7 @@ nav[data-pill] a[aria-current="page"].border-accent {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .login-button,
   .nav-pill,
   .nav-underline,
   .lift-card,

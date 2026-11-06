@@ -24,7 +24,7 @@ export function NavLink({
   const base =
     variant === "tab"
       ? "whitespace-nowrap border-b-2 px-3 py-3 text-sm transition-colors"
-      : "rounded-md px-3 py-1.5 text-sm transition-colors";
+      : "rounded-md px-2.5 py-1.5 text-sm transition-colors";
   const state =
     variant === "tab"
       ? active
