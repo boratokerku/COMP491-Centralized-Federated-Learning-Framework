@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { RunPicker } from "@/components/run-picker";
-import { Badge, Cell, Empty, Row, Section, Table } from "@/components/ui";
+import { Badge, Cell, Empty, PageHeader, Row, Section, Table } from "@/components/ui";
 import { requireUser } from "@/lib/auth/guard";
 import { fmtBytes, fmtNumber, fmtTime } from "@/lib/format";
 import { defaultRunId, getRun, listRounds, listUpdates, parseId } from "@/lib/queries";
@@ -22,7 +22,7 @@ export default async function Updates({ searchParams }: PageProps<"/app/updates"
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Update inbox</h1>
+      <PageHeader title="Update inbox" description="The model updates the clients sent in a round, and the uploads that were rejected, with the reason." />
       <RunPicker base="/app/updates" param="run" current={run.run_id} />
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-muted">Round:</span>

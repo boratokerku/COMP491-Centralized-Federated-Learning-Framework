@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Cell, Empty, Row, Table } from "@/components/ui";
-import { fmtNumber, fmtTime } from "@/lib/format";
+import { Badge, Cell, Empty, Row, Stat, Stats, Table } from "@/components/ui";
+import { fmtNumber, fmtRemaining, fmtTime } from "@/lib/format";
 
 type RoundSummary = {
   round_id: number;
@@ -29,12 +29,6 @@ type Detail = RoundSummary & {
 
 const OPEN_STATES = ["OPEN", "COLLECTING", "AGGREGATING"];
 const POLL_MS = 3000;
-
-function countdown(deadline: string, now: number): string {
-  const s = Math.round((new Date(deadline).getTime() - now) / 1000);
-  if (s <= 0) return "deadline passed";
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} left`;
-}
 
 export function LiveRound({
   runId,
@@ -86,35 +80,36 @@ export function LiveRound({
   const quorum = detail.accepted_count >= detail.min_participants;
   return (
     <div className="space-y-5" aria-live="polite">
-      <div className="flex flex-wrap items-center gap-4">
-        <h2 className="text-lg font-semibold">Round {detail.round_id}</h2>
-        <Badge value={detail.state} />
-        {live ? (
-          <span className="font-mono text-sm">{countdown(detail.deadline_at, now)}</span>
-        ) : (
-          <span className="text-sm text-muted">closed {fmtTime(detail.closed_at)}</span>
-        )}
-        <span className="text-xs text-muted">
-          {runStatus === "RUNNING" ? "live, updates every 3 s" : `run ${runStatus.toLowerCase()}`}
-          {updatedAt ? `, refreshed ${fmtTime(new Date(updatedAt))}` : ""}
-        </span>
-      </div>
+      <Stats>
+        <Stat label="Round">{detail.round_id}</Stat>
+        <Stat label="State">
+          <Badge value={detail.state} />
+        </Stat>
+        <Stat
+          label={live ? "Time left" : "Closed"}
+          hint={live ? `deadline ${fmtTime(detail.deadline_at)}` : undefined}
+        >
+          {live ? fmtRemaining(new Date(detail.deadline_at).getTime() - now) : fmtTime(detail.closed_at)}
+        </Stat>
+        <Stat
+          label="Updates received"
+          hint={`${detail.min_participants} needed${live ? (quorum ? ", quorum reached" : ", quorum not reached yet") : ""}`}
+        >
+          {detail.accepted_count} of {detail.selected_count}
+        </Stat>
+      </Stats>
+
+      <p className="text-xs text-muted">
+        {runStatus === "RUNNING" ? "Live: refreshes every 3 seconds" : `The run is ${runStatus.toLowerCase()}`}
+        {updatedAt ? `, last refresh ${fmtTime(new Date(updatedAt))}` : ""}
+        {detail.failure_reason ? `. The round failed: ${detail.failure_reason}` : ""}
+      </p>
 
       {error && (
         <p role="alert" className="text-sm text-red-600">
           Could not refresh ({error}). Showing the last data received.
         </p>
       )}
-
-      <p className="text-sm">
-        Updates received: <strong>{detail.accepted_count}</strong> of {detail.selected_count} selected;
-        at least <strong>{detail.min_participants}</strong> needed{" "}
-        {live ? (quorum ? "(quorum reached)" : "(quorum not reached yet)") : ""}
-      </p>
-      <p className="text-sm text-muted">
-        Opened {fmtTime(detail.opened_at)}, deadline {fmtTime(detail.deadline_at)}
-        {detail.failure_reason ? `, failed: ${detail.failure_reason}` : ""}
-      </p>
 
       <Table head={["Client", "Status", "Reason", "Finished"]}>
         {detail.participants.map((p) => (

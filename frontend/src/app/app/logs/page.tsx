@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Cell, Empty, Row, Table } from "@/components/ui";
+import { Cell, Empty, PageHeader, Row, Table } from "@/components/ui";
 import { requireUser } from "@/lib/auth/guard";
 import { fmtTime, shortId } from "@/lib/format";
 import { eventTypes, isUuid, listEvents, parseId } from "@/lib/queries";
@@ -35,7 +35,7 @@ export default async function Logs({ searchParams }: PageProps<"/app/logs">) {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-bold">Event log</h1>
+      <PageHeader title="Event log" description="Everything that happened in the system. Narrow it down with the filters." />
       <form className="flex flex-wrap items-end gap-3 text-sm">
         <label className="space-y-1">
           <span className="block text-muted">Run ID</span>

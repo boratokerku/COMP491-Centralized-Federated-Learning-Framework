@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Badge, Cell, Empty, Row, Table } from "@/components/ui";
+import { Badge, Cell, Empty, PageHeader, Row, Table } from "@/components/ui";
 import { requireUser } from "@/lib/auth/guard";
 import { fmtTime, shortId } from "@/lib/format";
 import { listRuns } from "@/lib/queries";
@@ -14,7 +14,7 @@ export default async function Reports() {
   const withReport = await Promise.all(runs.map(async (r) => ({ ...r, report: await hasReport(r.run_id) })));
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Reports and plots</h1>
+      <PageHeader title="Reports" description="The report and plots that are written when a run is finished. Open one to read it or download the files." />
       {runs.length === 0 ? (
         <Empty>No runs yet.</Empty>
       ) : (

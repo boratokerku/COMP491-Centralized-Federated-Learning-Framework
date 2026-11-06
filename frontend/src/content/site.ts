@@ -3,6 +3,7 @@ export const REPO_URL =
 
 export const nav = [
   { href: "/", label: "Home" },
+  { href: "/demo", label: "How it works" },
   { href: "/docs", label: "Documentation" },
   { href: "/results", label: "Results" },
   { href: "/team", label: "Team" },

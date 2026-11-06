@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { logout } from "@/app/login/actions";
+import { NavLink } from "@/components/nav-link";
 import { currentUser } from "@/lib/auth/guard";
 
-const links = [
+const tabs = [
+  { href: "/app", label: "Overview", exact: true },
   { href: "/app/rounds", label: "Live round" },
   { href: "/app/runs", label: "Runs" },
   { href: "/app/dashboards", label: "Dashboards" },
@@ -19,23 +21,47 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
   const user = await currentUser();
   if (!user) return <>{children}</>;
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3 text-sm">
-        <nav className="flex flex-wrap gap-4">
-          {links.map((l) => (
-            <Link key={l.href} href={l.href} className="text-muted hover:text-foreground">
-              {l.label}
+    <>
+      <header className="sticky top-0 z-10 border-b border-border bg-background/90 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 pt-3">
+          <div className="flex items-center gap-3">
+            <Link href="/app" className="flex items-center gap-2 font-semibold">
+              <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-xs font-bold text-white">
+                FL
+              </span>
+              CFL Framework
             </Link>
+            <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">
+              Internal area
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-sm">
+            <Link href="/" className="text-muted hover:text-foreground">
+              Project site &#8599;
+            </Link>
+            <form action={logout} className="flex items-center gap-2">
+              <span className="text-muted">{user}</span>
+              <button
+                type="submit"
+                className="rounded-md border border-border px-2.5 py-1 hover:bg-surface"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
+        </div>
+        <nav
+          aria-label="Internal area"
+          className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4"
+        >
+          {tabs.map((t) => (
+            <NavLink key={t.href} href={t.href} exact={t.exact} variant="tab">
+              {t.label}
+            </NavLink>
           ))}
         </nav>
-        <form action={logout} className="flex items-center gap-2 text-muted">
-          <span>{user}</span>
-          <button type="submit" className="underline hover:text-foreground">
-            Sign out
-          </button>
-        </form>
-      </div>
-      {children}
-    </div>
+      </header>
+      <main className="mx-auto w-full max-w-6xl flex-1 space-y-8 px-6 py-8">{children}</main>
+    </>
   );
 }
