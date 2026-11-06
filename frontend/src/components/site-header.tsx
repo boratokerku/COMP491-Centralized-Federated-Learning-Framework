@@ -4,13 +4,13 @@ import { NavLink } from "./nav-link";
 
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-10 border-b border-border bg-background/90 backdrop-blur">
+    <header className="top-0 z-10 border-b md:sticky border-border bg-background/90 backdrop-blur">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-xs font-bold text-white">
             FL
           </span>
-          CFL Framework
+          FedUp
         </Link>
         <nav aria-label="Main" className="flex flex-wrap items-center gap-1">
           {nav.map((item) => (
