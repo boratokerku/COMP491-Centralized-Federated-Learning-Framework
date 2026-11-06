@@ -104,6 +104,22 @@ nav[data-pill] .nav-hover[aria-current="page"] {
     background-color 0.35s ease;
 }
 
+/* The same for the internal area, whose tabs are marked by a line. */
+nav[data-pill] a[aria-current="page"].border-accent {
+  border-color: transparent;
+}
+
+.nav-underline {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+  transition:
+    transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .page-enter {
   animation: page-enter 0.4s ease-out backwards;
 }
@@ -384,6 +400,7 @@ nav[data-pill] .nav-hover[aria-current="page"] {
 
 @media (prefers-reduced-motion: reduce) {
   .nav-pill,
+  .nav-underline,
   .lift-card,
   .round-step,
   .timeline::after,

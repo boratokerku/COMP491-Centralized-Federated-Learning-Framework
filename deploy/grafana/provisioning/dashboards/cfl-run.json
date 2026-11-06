@@ -5,7 +5,7 @@
     "cfl"
   ],
   "schemaVersion": 39,
-  "version": 1,
+  "version": 3,
   "editable": true,
   "timezone": "utc",
   "refresh": "10s",
@@ -13,7 +13,7 @@
     "from": "now-30d",
     "to": "now"
   },
-  "description": "Round state, durations, failures, global metrics and transfer metrics of one run. Data: PostgreSQL via the read-only role cfl_web.",
+  "description": "Round state, durations, failures, global and per-client metrics, and communication of one run. Data: PostgreSQL via the read-only role cfl_web.",
   "templating": {
     "list": [
       {
@@ -30,6 +30,24 @@
         "includeAll": false,
         "multi": false,
         "current": {}
+      },
+      {
+        "name": "client_metric",
+        "label": "Client metric",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "cfl-postgres"
+        },
+        "refresh": 1,
+        "sort": 1,
+        "query": "SELECT DISTINCT metric_name FROM metrics WHERE client_id IS NOT NULL AND message_type IS NULL ORDER BY 1",
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "client_val_f1_after",
+          "value": "client_val_f1_after"
+        }
       }
     ]
   },
@@ -577,7 +595,7 @@
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT event_type AS \"Event\", count(*) AS \"Count\" FROM events\nWHERE run_id = '$run_id' AND event_type IN ('CLIENT_DROPOUT','UPDATE_REJECTED','UPDATE_EXCLUDED','ROUND_FAILED','COORDINATOR_RESUMED','RUN_FAILED')\nGROUP BY 1 ORDER BY 2 DESC"
+          "rawSql": "SELECT event_type AS \"Event\", count(*) AS \"Count\" FROM events\nWHERE run_id = '$run_id' AND event_type IN ('CLIENT_DROPOUT','UPDATE_REJECTED','UPDATE_EXCLUDED','ROUND_FAILED','COORDINATOR_RESUMED','RUN_FAILED','UPDATE_RETRY_ACKNOWLEDGED')\nGROUP BY 1 ORDER BY 2 DESC"
         }
       ],
       "options": {
@@ -620,7 +638,7 @@
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT occurred_at AS \"Time\", event_type AS \"Event\", round_id AS \"Round\", client_id AS \"Client\",\n  COALESCE(reason_code, '') AS \"Reason\" FROM events\nWHERE run_id = '$run_id' AND event_type IN ('CLIENT_DROPOUT','UPDATE_REJECTED','UPDATE_EXCLUDED','ROUND_FAILED','COORDINATOR_RESUMED','RUN_FAILED')\nORDER BY occurred_at DESC LIMIT 50"
+          "rawSql": "SELECT occurred_at AS \"Time\", event_type AS \"Event\", round_id AS \"Round\", client_id AS \"Client\",\n  COALESCE(reason_code, '') AS \"Reason\" FROM events\nWHERE run_id = '$run_id' AND event_type IN ('CLIENT_DROPOUT','UPDATE_REJECTED','UPDATE_EXCLUDED','ROUND_FAILED','COORDINATOR_RESUMED','RUN_FAILED','UPDATE_RETRY_ACKNOWLEDGED')\nORDER BY occurred_at DESC LIMIT 50"
         }
       ],
       "fieldConfig": {
@@ -699,8 +717,8 @@
     {
       "id": 12,
       "type": "timeseries",
-      "title": "Transfer time and round trips by message type (ms)",
-      "description": "Recorded by the gateway in distributed runs; empty for local simulations.",
+      "title": "Transfer time by message type (ms)",
+      "description": "As each client observed it, network included (POST /transfer). Empty for local simulations and for runs before this measurement was fixed.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "cfl-postgres"
@@ -721,7 +739,7 @@
           "format": "time_series",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT recorded_at AS time, message_type || ' ' || metric_name AS metric, value FROM metrics\nWHERE run_id = '$run_id' AND message_type IS NOT NULL AND metric_name IN ('transfer_ms', 'rtt_ms')\nORDER BY 1"
+          "rawSql": "SELECT recorded_at AS time, message_type AS metric, value FROM metrics\nWHERE run_id = '$run_id' AND message_type IS NOT NULL AND metric_name = 'transfer_ms'\nORDER BY 1"
         }
       ],
       "fieldConfig": {
@@ -731,7 +749,8 @@
             "drawStyle": "line",
             "lineWidth": 2,
             "showPoints": "always",
-            "pointSize": 6
+            "pointSize": 6,
+            "spanNulls": true
           }
         },
         "overrides": []
@@ -744,6 +763,496 @@
         "tooltip": {
           "mode": "multi"
         }
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Total bytes transmitted",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT coalesce(sum(value), 0) AS bytes FROM metrics WHERE run_id = '$run_id' AND metric_name = 'message_bytes'"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "background"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Client retries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 36,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT coalesce(sum(value), 0) AS retries FROM metrics WHERE run_id = '$run_id' AND metric_name = 'client_retry_count'"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "background"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Retried uploads",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) AS retried FROM events WHERE run_id = '$run_id' AND event_type = 'UPDATE_RETRY_ACKNOWLEDGED'"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "background"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Rejected or excluded updates",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 36,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) AS rejected FROM events WHERE run_id = '$run_id' AND event_type IN ('UPDATE_REJECTED', 'UPDATE_EXCLUDED')"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "background"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Messages: size and time",
+      "description": "transfer_ms is measured by the client, gateway_ms inside the gateway.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT message_type AS \"Message type\",\n  count(*) FILTER (WHERE metric_name = 'message_bytes') AS \"Count\",\n  sum(value) FILTER (WHERE metric_name = 'message_bytes') AS \"Total bytes\",\n  min(value) FILTER (WHERE metric_name = 'message_bytes') AS \"Min bytes\",\n  avg(value) FILTER (WHERE metric_name = 'message_bytes') AS \"Mean bytes\",\n  max(value) FILTER (WHERE metric_name = 'message_bytes') AS \"Max bytes\",\n  min(value) FILTER (WHERE metric_name = 'transfer_ms') AS \"Min transfer ms\",\n  avg(value) FILTER (WHERE metric_name = 'transfer_ms') AS \"Mean transfer ms\",\n  max(value) FILTER (WHERE metric_name = 'transfer_ms') AS \"Max transfer ms\",\n  avg(value) FILTER (WHERE metric_name = 'gateway_ms') AS \"Mean gateway ms\"\nFROM metrics WHERE run_id = '$run_id' AND message_type IS NOT NULL\nGROUP BY message_type ORDER BY 3 DESC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*bytes"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*ms"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Round trip time by client (ms)",
+      "description": "Client to gateway, measured once per round.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT recorded_at AS time, client_id AS metric, value FROM metrics\nWHERE run_id = '$run_id' AND metric_name = 'client_rtt_ms'\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "pointSize": 6,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Client metric per round: $client_metric",
+      "description": "Choose the metric with the Client metric selector at the top.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT recorded_at AS time, client_id AS metric, value FROM metrics\nWHERE run_id = '$run_id' AND metric_name = '$client_metric' AND client_id IS NOT NULL AND message_type IS NULL\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "pointSize": 6,
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "table",
+      "title": "Clients over all rounds",
+      "description": "Validation metrics use each client's own val split.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT client_id AS \"Client\",\n  count(*) FILTER (WHERE metric_name = 'client_train_ms') AS \"Rounds\",\n  min(value) FILTER (WHERE metric_name = 'client_train_ms') AS \"Min train ms\",\n  avg(value) FILTER (WHERE metric_name = 'client_train_ms') AS \"Mean train ms\",\n  max(value) FILTER (WHERE metric_name = 'client_train_ms') AS \"Max train ms\",\n  avg(value) FILTER (WHERE metric_name = 'client_rtt_ms') AS \"Mean RTT ms\",\n  sum(value) FILTER (WHERE metric_name = 'client_retry_count') AS \"Retries\",\n  avg(value) FILTER (WHERE metric_name = 'client_train_loss') AS \"Mean train loss\",\n  avg(value) FILTER (WHERE metric_name = 'client_val_f1_before') AS \"Mean val F1 before\",\n  avg(value) FILTER (WHERE metric_name = 'client_val_f1_after') AS \"Mean val F1 after\"\nFROM metrics WHERE run_id = '$run_id' AND client_id IS NOT NULL AND message_type IS NULL\nGROUP BY client_id ORDER BY client_id"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* ms"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*(F1|loss).*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 21,
+      "type": "table",
+      "title": "Global model and updates per round",
+      "description": "Held-out test set; counters are per round.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cfl-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cfl-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT round_id AS \"Round\",\n  max(value) FILTER (WHERE metric_name = 'global_precision') AS \"Precision\",\n  max(value) FILTER (WHERE metric_name = 'global_recall') AS \"Recall\",\n  max(value) FILTER (WHERE metric_name = 'global_loss') AS \"Loss\",\n  max(value) FILTER (WHERE metric_name = 'updates_received') AS \"Updates received\",\n  max(value) FILTER (WHERE metric_name = 'updates_used') AS \"Updates used\",\n  max(value) FILTER (WHERE metric_name = 'updates_rejected') AS \"Updates rejected\",\n  max(value) FILTER (WHERE metric_name = 'total_samples') AS \"Samples\",\n  max(value) FILTER (WHERE metric_name = 'bytes_read') AS \"Bytes read\"\nFROM metrics WHERE run_id = '$run_id' AND client_id IS NULL AND message_type IS NULL AND round_id IS NOT NULL\nGROUP BY round_id ORDER BY round_id DESC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Bytes read"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
       }
     }
   ]
