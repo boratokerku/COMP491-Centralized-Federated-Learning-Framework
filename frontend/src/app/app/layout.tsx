@@ -29,7 +29,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
               <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-xs font-bold text-white">
                 FL
               </span>
-              CFL Framework
+              FedUp
             </Link>
             <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">
               Internal area
