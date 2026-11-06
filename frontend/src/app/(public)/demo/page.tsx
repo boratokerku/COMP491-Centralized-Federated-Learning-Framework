@@ -17,7 +17,7 @@ export default function Demo() {
     <div className="space-y-8">
       <PageHeader
         title="How it works"
-        description={`A replay of one finished training run: ${demo.clients.length} clients, ${demo.rounds.length} rounds, a text classification task. In each round the clients train on their own data and send back only model updates; the coordinator combines them into a new global model. Below it, each failure can be watched on its own.`}
+        description={`A replay of one finished training run: ${demo.clients.length} clients, ${demo.rounds.length} rounds, a text classification task. In each round the clients train on their own data and upload only model updates through the gateway; the coordinator combines them into a new global model. Below it, each failure can be watched on its own.`}
       />
 
       <DemoPlayer demo={demo} />

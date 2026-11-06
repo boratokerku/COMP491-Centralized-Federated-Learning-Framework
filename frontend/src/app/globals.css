@@ -60,6 +60,7 @@ summary:focus-visible {
 
 /* The "how it works" replay. Only motion lives here, so without it every frame still reads. */
 .demo-packet {
+  offset-rotate: 0deg;
   animation: demo-move var(--dur) ease-in-out both;
 }
 
@@ -92,7 +93,7 @@ summary:focus-visible {
 
 @keyframes demo-move {
   from {
-    transform: translate(var(--x1), var(--y1));
+    offset-distance: 0%;
     opacity: 0;
   }
   12%,
@@ -100,7 +101,7 @@ summary:focus-visible {
     opacity: 1;
   }
   to {
-    transform: translate(var(--x2), var(--y2));
+    offset-distance: 100%;
     opacity: 0;
   }
 }
