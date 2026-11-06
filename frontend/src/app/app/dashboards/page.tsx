@@ -27,7 +27,7 @@ export default async function Dashboards({ searchParams }: PageProps<"/app/dashb
       </p>
       <iframe
         key={run.run_id}
-        src={`${path}&kiosk&theme=light`}
+        src={`${path}&kiosk&theme=dark`}
         title="Grafana: CFL Run Overview"
         className="h-[1350px] w-full rounded-xl border border-border"
       />
