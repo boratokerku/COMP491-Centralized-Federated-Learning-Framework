@@ -1,0 +1,218 @@
+{
+  "task": "text",
+  "strategy": "fedavg",
+  "clients": [
+    "Client A",
+    "Client B",
+    "Client C",
+    "Client D"
+  ],
+  "rounds": [
+    {
+      "round": 1,
+      "participants": [
+        {
+          "client": "Client A",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client B",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client C",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client D",
+          "status": "UPDATE_ACCEPTED"
+        }
+      ],
+      "f1": 0.632,
+      "rocAuc": 0.9448253732351551,
+      "prAuc": 0.7458266408937047
+    },
+    {
+      "round": 2,
+      "participants": [
+        {
+          "client": "Client A",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client B",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client C",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client D",
+          "status": "UPDATE_ACCEPTED"
+        }
+      ],
+      "f1": 0.7475409836065574,
+      "rocAuc": 0.970174964534216,
+      "prAuc": 0.8545332454255024
+    },
+    {
+      "round": 3,
+      "participants": [
+        {
+          "client": "Client A",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client B",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client C",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client D",
+          "status": "DROPOUT"
+        }
+      ],
+      "f1": 0.7658227848101266,
+      "rocAuc": 0.9798520570154698,
+      "prAuc": 0.9021842548238097
+    },
+    {
+      "round": 4,
+      "participants": [
+        {
+          "client": "Client A",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client B",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client C",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client D",
+          "status": "UPDATE_ACCEPTED"
+        }
+      ],
+      "f1": 0.8013245033112583,
+      "rocAuc": 0.9849945956900629,
+      "prAuc": 0.9320776521467623
+    },
+    {
+      "round": 5,
+      "participants": [
+        {
+          "client": "Client A",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client B",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client C",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client D",
+          "status": "UPDATE_ACCEPTED"
+        }
+      ],
+      "f1": 0.8223684210526315,
+      "rocAuc": 0.9877305275957576,
+      "prAuc": 0.9457773600874966
+    },
+    {
+      "round": 6,
+      "participants": [
+        {
+          "client": "Client A",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client B",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client C",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client D",
+          "status": "UPDATE_ACCEPTED"
+        }
+      ],
+      "f1": 0.8356164383561644,
+      "rocAuc": 0.9889042761602377,
+      "prAuc": 0.9509845208504114
+    },
+    {
+      "round": 7,
+      "participants": [
+        {
+          "client": "Client A",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client B",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client C",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client D",
+          "status": "UPDATE_ACCEPTED"
+        }
+      ],
+      "f1": 0.8601398601398601,
+      "rocAuc": 0.9894615956225089,
+      "prAuc": 0.9548308219585518
+    },
+    {
+      "round": 8,
+      "participants": [
+        {
+          "client": "Client A",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client B",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client C",
+          "status": "UPDATE_ACCEPTED"
+        },
+        {
+          "client": "Client D",
+          "status": "UPDATE_ACCEPTED"
+        }
+      ],
+      "f1": 0.845360824742268,
+      "rocAuc": 0.9899682496791192,
+      "prAuc": 0.957550028574129
+    }
+  ],
+  "events": [
+    {
+      "round": 3,
+      "type": "CLIENT_DROPOUT",
+      "client": "Client D",
+      "scripted": true
+    },
+    {
+      "round": 5,
+      "type": "COORDINATOR_RESTART",
+      "scripted": true
+    }
+  ],
+  "scripted": true
+}

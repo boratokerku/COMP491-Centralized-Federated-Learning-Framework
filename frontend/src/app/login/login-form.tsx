@@ -5,7 +5,7 @@ import { login, type LoginState } from "./actions";
 
 export function LoginForm({ next }: { next: string }) {
   const [state, action, pending] = useActionState<LoginState, FormData>(login, {});
-  const field = "w-full rounded border border-border bg-transparent px-3 py-2";
+  const field = "w-full rounded-lg border border-border bg-background px-3 py-2";
   return (
     <form action={action} className="space-y-4">
       <input type="hidden" name="next" value={next} />
@@ -31,7 +31,7 @@ export function LoginForm({ next }: { next: string }) {
       <button
         type="submit"
         disabled={pending}
-        className="rounded bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+        className="w-full rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
       >
         {pending ? "Signing in..." : "Sign in"}
       </button>

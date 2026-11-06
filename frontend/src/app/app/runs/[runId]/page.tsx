@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LineChart, type Series } from "@/components/line-chart";
-import { Badge, Cell, Facts, Row, Section, Table } from "@/components/ui";
+import { Badge, Cell, Facts, PageHeader, Row, Section, Stat, Stats, Table } from "@/components/ui";
 import { requireUser } from "@/lib/auth/guard";
 import { fmtBytes, fmtTime } from "@/lib/format";
 import { getRun, listRounds, roundMetricSeries } from "@/lib/queries";
@@ -40,37 +40,48 @@ export default async function RunDetail({ params }: PageProps<"/app/runs/[runId]
 
   return (
     <div className="space-y-8">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold">{run.name}</h1>
-        <p className="font-mono text-xs text-muted">{run.run_id}</p>
+      <div className="space-y-4">
+        <PageHeader title={run.name} description={run.run_id} />
+        <Stats>
+          <Stat label="Status">
+            <Badge value={run.status} />
+          </Stat>
+          <Stat label="Strategy" hint={run.task_name}>
+            {run.strategy}
+          </Stat>
+          <Stat label="Rounds done" hint={rounds.some((r) => r.state === "FAILED") ? "some failed" : undefined}>
+            {rounds.filter((r) => r.state === "DONE").length} of{" "}
+            {String((run.config as { rounds?: { num_rounds?: number } }).rounds?.num_rounds ?? rounds.length)}
+          </Stat>
+          <Stat label="Global model">v{run.model_version}</Stat>
+        </Stats>
       </div>
 
-      <Section title="Overview">
-        <Facts
-          items={[
-            ["Status", <Badge key="s" value={run.status} />],
-            ["Strategy", run.strategy],
-            ["Task", run.task_name],
-            ["Seed", String(run.seed)],
-            ["Created", fmtTime(run.created_at)],
-            ["Started", fmtTime(run.started_at)],
-            ["Completed", fmtTime(run.completed_at)],
-            ...(run.failure_reason ? ([["Failure reason", run.failure_reason]] as [string, string][]) : []),
-          ]}
-        />
-      </Section>
+      <div className="grid gap-8 lg:grid-cols-2">
+        <Section title="Overview">
+          <Facts
+            items={[
+              ["Task", run.task_name],
+              ["Seed", String(run.seed)],
+              ["Created", fmtTime(run.created_at)],
+              ["Started", fmtTime(run.started_at)],
+              ["Completed", fmtTime(run.completed_at)],
+              ...(run.failure_reason ? ([["Failure reason", run.failure_reason]] as [string, string][]) : []),
+            ]}
+          />
+        </Section>
 
-      <Section title="Versions">
-        <Facts
-          items={[
-            ["Protocol", run.protocol_version],
-            ["Manifest", `${run.manifest_version} (${run.manifest_sha256})`],
-            ["Preprocessing", run.preprocessing_version],
-            ["Model architecture", `${run.model_architecture} ${run.model_architecture_version}`],
-            ["Model fingerprint", run.model_fingerprint],
-          ]}
-        />
-      </Section>
+        <Section title="Versions" hint="What this run was built with, so the result can be reproduced.">
+          <Facts
+            items={[
+              ["Protocol", run.protocol_version],
+              ["Manifest", run.manifest_version],
+              ["Preprocessing", run.preprocessing_version],
+              ["Model", `${run.model_architecture} ${run.model_architecture_version}`],
+            ]}
+          />
+        </Section>
+      </div>
 
       <Section title="Final model">
         {run.final_model_path ? (
@@ -134,9 +145,18 @@ export default async function RunDetail({ params }: PageProps<"/app/runs/[runId]
         </div>
       </Section>
 
+      <Section title="Checksums" hint="Fingerprints that identify the exact manifest, model and configuration.">
+        <Facts
+          items={[
+            ["Manifest SHA-256", run.manifest_sha256],
+            ["Model fingerprint", run.model_fingerprint],
+            ["Config SHA-256", run.config_sha256],
+          ]}
+        />
+      </Section>
+
       <Section title="Configuration">
-        <p className="font-mono text-xs text-muted">SHA-256 {run.config_sha256}</p>
-        <pre className="overflow-x-auto rounded border border-border p-3 text-xs">
+        <pre className="overflow-x-auto rounded-xl border border-border bg-surface p-4 text-xs">
           {JSON.stringify(run.config, null, 2)}
         </pre>
       </Section>

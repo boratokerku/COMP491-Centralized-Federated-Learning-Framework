@@ -1,8 +1,16 @@
 export type Series = { label: string; points: { x: number; y: number }[] };
 
 const W = 560;
+
+// 2399.8 -> "2.4k", 4200000 -> "4.2M", 0.5 -> "0.50": short enough for the axis.
+function tick(v: number): string {
+  const a = Math.abs(v);
+  if (a >= 1e6) return `${(v / 1e6).toFixed(1).replace(/\.0$/, "")}M`;
+  if (a >= 1e3) return `${(v / 1e3).toFixed(1).replace(/\.0$/, "")}k`;
+  return Number.isInteger(v) ? String(v) : v.toFixed(2);
+}
 const H = 240;
-const PAD = { l: 48, r: 12, t: 12, b: 32 };
+const PAD = { l: 44, r: 12, t: 12, b: 32 };
 const COLORS = ["#1d4ed8", "#d97706", "#059669", "#dc2626", "#7c3aed"];
 
 // Small dependency-free SVG line chart, rendered on the server.
@@ -39,7 +47,7 @@ export function LineChart({
           <g key={t}>
             <line x1={PAD.l} x2={W - PAD.r} y1={sy(t)} y2={sy(t)} stroke="currentColor" opacity={0.12} />
             <text x={PAD.l - 6} y={sy(t) + 4} textAnchor="end" fontSize={10} fill="currentColor">
-              {Number.isInteger(t) ? t : t.toFixed(2)}
+              {tick(t)}
             </text>
           </g>
         ))}

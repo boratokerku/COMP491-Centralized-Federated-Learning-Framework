@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Badge, Cell, Empty, Row, Table } from "@/components/ui";
+import { Badge, Cell, Empty, PageHeader, Row, Table } from "@/components/ui";
 import { requireUser } from "@/lib/auth/guard";
 import { fmtTime } from "@/lib/format";
 import { listClients } from "@/lib/queries";
@@ -12,7 +12,7 @@ export default async function Clients() {
   const clients = await listClients();
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Clients and conformance</h1>
+      <PageHeader title="Clients" description="The organizations that take part, and whether their client passed the compatibility (conformance) check." />
       {clients.length === 0 ? (
         <Empty>No client approved yet (cfl-admin add-client).</Empty>
       ) : (
