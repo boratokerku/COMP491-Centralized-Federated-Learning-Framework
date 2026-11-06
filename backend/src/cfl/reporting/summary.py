@@ -159,6 +159,11 @@ def build_summary(data: RunData) -> dict[str, Any]:
             **stats(v),
         }
 
+    bytes_by_message: dict[str, float] = defaultdict(float)
+    for m in metrics:
+        if m.metric_name == "message_bytes" and m.message_type is not None:
+            bytes_by_message[m.message_type] += m.value
+
     failed = [r for r in data.rounds if r.state.value == "FAILED"]
     done = [r for r in data.rounds if r.state.value == "DONE"]
     event_counts: dict[str, int] = defaultdict(int)
@@ -218,6 +223,19 @@ def build_summary(data: RunData) -> dict[str, Any]:
         "clients": dict(sorted(clients.items())),
         "metric_summaries": metric_summaries,
         "communication": communication,
+        "communication_totals": {
+            "bytes": sum(bytes_by_message.values()),
+            "bytes_by_message_type": dict(sorted(bytes_by_message.items())),
+        },
+        "reliability": {
+            "dropouts": event_counts.get("CLIENT_DROPOUT", 0),
+            "retries": sum(m.value for m in metrics if m.metric_name == "client_retry_count"),
+            "retried_uploads": event_counts.get("UPDATE_RETRY_ACKNOWLEDGED", 0),
+            "rejected_updates": event_counts.get("UPDATE_REJECTED", 0),
+            "excluded_updates": event_counts.get("UPDATE_EXCLUDED", 0),
+            "failed_rounds": len(failed),
+            "coordinator_resumes": event_counts.get("COORDINATOR_RESUMED", 0),
+        },
         "event_counts": dict(sorted(event_counts.items())),
         "incidents": incidents,
         "final_model": {

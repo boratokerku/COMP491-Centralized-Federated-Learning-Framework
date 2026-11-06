@@ -56,7 +56,9 @@ All metrics end up in the `metrics` table (one row per value). Names and units a
 
 **Coordinator** (per round, no client id): `global_<metric>` (held-out test set), `updates_received`, `updates_used`, `updates_rejected`, `total_samples` (count), `bytes_read`, `model_bytes` (bytes), `load_ms`, `aggregation_ms`, `evaluation_ms`, `write_ms`, `waiting_ms`, `round_duration_ms` (ms).
 
-**Gateway** (per request, with client id and `message_type` ∈ `register`, `conformance`, `task`, `model_download`, `update_upload`, `final_model_download`): `transfer_ms` (ms), `message_bytes` (bytes), `rtt_ms` (ms, from `GET /health` round trips), `retry_count` (count, reported by the client runtime).
+**Gateway** (per request, with client id and `message_type` ∈ `model_download`, `update_upload`, `final_model_download`): `gateway_ms` (ms, time inside the gateway, without the network), `message_bytes` (bytes).
+
+**Client → `POST /transfer`** (with client id and `message_type`, the three above plus `register`, `conformance` and `task`): `transfer_ms` (ms, the transfer as the client observed it, network included), and `message_bytes` for those three control messages. `register` and `conformance` arrive with the first task of a run, `task` once per round; empty polls are not reported. In `UpdateMetadata.metrics`: `rtt_ms` (ms, from `GET /health` round trips), `retry_count` (count, retries since the previous update).
 
 ## 5. Conformance report
 
