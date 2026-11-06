@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { logout } from "@/app/login/actions";
 import { NavLink } from "@/components/nav-link";
+import { NavPill } from "@/components/nav-pill";
 import { Logo } from "@/components/ui";
 import { currentUser } from "@/lib/auth/guard";
 
@@ -51,8 +52,9 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
         </div>
         <nav
           aria-label="Internal area"
-          className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4"
+          className="relative mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4"
         >
+          <NavPill underline />
           {tabs.map((t) => (
             <NavLink key={t.href} href={t.href} exact={t.exact} variant="tab">
               {t.label}
@@ -60,7 +62,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
           ))}
         </nav>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 space-y-8 px-6 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>
     </>
   );
 }
