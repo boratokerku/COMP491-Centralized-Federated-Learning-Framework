@@ -7,7 +7,7 @@ Additions to the spec are marked "addition"; they are listed in planning/interfa
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -141,6 +141,19 @@ class UpdateAck(BaseModel):
     client_id: str | None = None
     round_id: int | None = None
     reason: str | None = None  # None, "duplicate_idempotent", "duplicate_update", ...
+
+
+class TransferReport(BaseModel):  # addition: POST /transfer
+    """How long a transfer took as the client saw it. Only the client can tell, because the
+    gateway never sees the bytes cross the network."""
+
+    run_id: str
+    round_id: int | None = None
+    message_type: Literal[
+        "register", "conformance", "task", "model_download", "update_upload", "final_model_download"
+    ]
+    duration_ms: float = Field(ge=0)
+    message_bytes: int | None = Field(default=None, ge=0)  # request + response body
 
 
 # -- 4. Errors ----------------------------------------------------------------------------------

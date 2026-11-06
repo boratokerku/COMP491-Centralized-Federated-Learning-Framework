@@ -111,6 +111,8 @@ class ClientRuntime:
         self.train_data = task.load_split(Path(partition_dir) / "train.csv")
         self.val_data = task.load_split(Path(partition_dir) / "val.csv")
         self.state = self._load_state()
+        self._setup_reported: set[str] = set()
+        self._retries_counted = 0
         self.manifest_version: str | None = None
 
     # -- persistence ------------------------------------------------------------------------------
@@ -245,7 +247,9 @@ class ClientRuntime:
         self.log(
             f"round {task.round_id} of run {task.run_id[:8]}: training on v{task.model_version}"
         )
+        self._report_control_messages(task)
         global_bytes = self.transport.download_model(task.run_id, task.model_version)
+        self._report_transfer(task.run_id, task.round_id, "model_download")
         global_weights = bytes_to_state_dict(global_bytes)
         model = self.task.build_model()
         model.load_state_dict(global_weights)
@@ -292,6 +296,7 @@ class ClientRuntime:
             self.log(f"update {meta.update_id[:8]} refused: {exc}")
             ack = None
         if ack is not None and ack.accepted:
+            self._report_transfer(meta.run_id, meta.round_id, "update_upload")
             note = " (retry acknowledged)" if ack.reason == "duplicate_idempotent" else ""
             self.log(f"round {meta.round_id}: update accepted{note}")
         elif ack is not None and ack.reason not in FINAL_REJECTIONS:
@@ -304,11 +309,27 @@ class ClientRuntime:
         self._save_state()
         return True
 
+    def _report_control_messages(self, task: TaskAssignment) -> None:
+        """Registration and conformance happen before the client knows a run, so they are
+        reported with the first task of each run. Empty task polls are not reported."""
+        if task.run_id not in self._setup_reported:
+            self._setup_reported.add(task.run_id)
+            for message_type in ("register", "conformance"):
+                self._report_transfer(task.run_id, None, message_type)
+        self._report_transfer(task.run_id, task.round_id, "task")
+
+    def _report_transfer(self, run_id: str, round_id: int | None, message_type: str) -> None:
+        report = getattr(self.transport, "report_transfer", None)
+        if report is not None:  # the in-memory simulation has no network to measure
+            report(run_id, round_id, message_type)
+
     def _transfer_metrics(self) -> dict[str, float]:
         stats = getattr(self.transport, "stats", None)
         metrics: dict[str, float] = {}
         if stats is not None:
-            metrics["retry_count"] = float(sum(stats.retries.values()))
+            total = sum(stats.retries.values())
+            metrics["retry_count"] = float(total - self._retries_counted)  # since the last update
+            self._retries_counted = total
         ping = getattr(self.transport, "ping", None)
         if ping is not None:
             try:

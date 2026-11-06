@@ -62,7 +62,7 @@ export default async function Logs({ searchParams }: PageProps<"/app/logs">) {
           <span className="block text-muted">Status</span>
           <input name="status" defaultValue={filter.status} className={`${field} w-28`} />
         </label>
-        <button type="submit" className="rounded bg-accent px-3 py-1 text-white">
+        <button type="submit" className="rounded bg-accent px-3 py-1 text-background">
           Filter
         </button>
         <Link href="/app/logs" className="py-1 text-muted underline">
@@ -70,7 +70,7 @@ export default async function Logs({ searchParams }: PageProps<"/app/logs">) {
         </Link>
       </form>
 
-      {runId && !filter.run_id && <p className="text-sm text-red-600">Run ID is not a valid UUID, ignored.</p>}
+      {runId && !filter.run_id && <p className="text-sm text-danger">Run ID is not a valid UUID, ignored.</p>}
       {events.length === 0 ? (
         <Empty>No events match.</Empty>
       ) : (

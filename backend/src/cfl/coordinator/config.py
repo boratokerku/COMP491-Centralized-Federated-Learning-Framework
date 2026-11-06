@@ -26,7 +26,7 @@ class TaskSection(_Strict):
     name: Literal["tabular", "text"]
     data_dir: str  # holds partitions/<dataset>/test.csv, the server's held-out set
     num_clients: int = Field(ge=1)
-    partition: Literal["iid"] = "iid"
+    partition: Literal["iid", "label_skew"] = "iid"
 
 
 class StrategySection(_Strict):
