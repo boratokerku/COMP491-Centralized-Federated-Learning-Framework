@@ -286,7 +286,7 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
       <text x={GATE.x + 12} y={gateY + 4.5} fontSize={13} fontWeight={650} fill="currentColor">
         Gateway
       </text>
-      <text x={GATE.x + 72} y={gateY + 4} fontSize={11} fill="currentColor" opacity={0.7}>
+      <text x={GATE.x + 86} y={gateY + 4} fontSize={11} fill="currentColor" opacity={0.7}>
         the clients&apos; only way in
       </text>
 
