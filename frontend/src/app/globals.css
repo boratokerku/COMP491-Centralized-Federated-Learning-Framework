@@ -57,3 +57,91 @@ summary:focus-visible {
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* The "how it works" replay. Only motion lives here, so without it every frame still reads. */
+.demo-packet {
+  offset-rotate: 0deg;
+  animation: demo-move var(--dur) ease-in-out both;
+}
+
+.demo-fill,
+.demo-bar {
+  transform-box: fill-box;
+  transform-origin: left center;
+}
+
+.demo-fill {
+  animation: demo-fill var(--dur) ease-in-out both;
+}
+
+.demo-pulse {
+  animation: demo-pulse 0.7s ease-in-out infinite alternate;
+}
+
+.demo-pop {
+  animation: demo-pop 0.35s ease-out both;
+}
+
+.demo-fade {
+  animation: demo-fade 0.3s ease-out both;
+}
+
+.demo-draw {
+  stroke-dasharray: 1;
+  animation: demo-draw 0.5s ease-out both;
+}
+
+@keyframes demo-move {
+  from {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  to {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes demo-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes demo-pulse {
+  to {
+    stroke-width: 4;
+    stroke: var(--accent);
+  }
+}
+
+@keyframes demo-pop {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes demo-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes demo-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .demo-pulse,
+  .demo-pop,
+  .demo-fade,
+  .demo-draw {
+    animation: none;
+  }
+}
