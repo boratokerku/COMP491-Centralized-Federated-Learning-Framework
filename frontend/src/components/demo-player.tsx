@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import {
   buildFrames,
   buildScenarios,
@@ -15,12 +15,27 @@ import {
   type Scenario,
 } from "@/lib/demo-frames";
 
-const W = 420;
-const H = 324;
-const COORD = { x: 110, y: 12, w: 140, h: 72 };
-const DB = { x: 300, y: 22, w: 112, h: 48 };
-const GATE = { x: 6, y: 122, w: 408, h: 34 };
-const CLIENT_TOP = 216;
+// Text keeps its size in the viewBox, so a wider stage means more air, not bigger boxes.
+const WIDE_STAGE = {
+  W: 760,
+  H: 444,
+  COORD: { x: 250, y: 18, w: 200, h: 88 },
+  DB: { x: 556, y: 28, w: 190, h: 68 },
+  GATE: { x: 14, y: 186, w: 732, h: 44 },
+  CLIENT_TOP: 322,
+  boxW: 140,
+  boxH: 64,
+};
+const NARROW_STAGE = {
+  W: 420,
+  H: 360,
+  COORD: { x: 110, y: 14, w: 140, h: 76 },
+  DB: { x: 300, y: 26, w: 112, h: 50 },
+  GATE: { x: 6, y: 138, w: 408, h: 36 },
+  CLIENT_TOP: 252,
+  boxW: 92,
+  boxH: 54,
+};
 
 const GREEN = "#059669";
 const BLUE = "var(--accent)";
@@ -218,9 +233,9 @@ function MovingPacket({ packet, route, ms }: { packet: Packet; route: Point[]; m
 type Point = { x: number; y: number };
 
 function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: string[]; animate: boolean; ms: number; id: string }) {
+  const { W, H, COORD, DB, GATE, CLIENT_TOP, boxW, boxH } = useMatchMedia(WIDE_QUERY, true) ? WIDE_STAGE : NARROW_STAGE;
   const count = clients.length;
   const slot = (i: number) => (W / count) * (i + 0.5);
-  const boxW = Math.min(92, W / count - 12);
   const coordX = COORD.x + COORD.w / 2;
   const down = frame.coordinator === "down";
   const failed = frame.coordinator === "failed";
@@ -284,22 +299,22 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
       />
 
       <rect x={GATE.x} y={GATE.y} width={GATE.w} height={GATE.h} rx={8} fill="var(--background)" stroke={gatewayColor} strokeWidth={gateway ? 2 : 1.5} />
-      <text x={GATE.x + 12} y={gateY + 4.5} fontSize={13} fontWeight={650} fill="currentColor">
+      <text x={GATE.x + 14} y={gateY + 4.5} fontSize={13} fontWeight={650} fill="currentColor">
         Gateway
       </text>
-      <text x={GATE.x + 86} y={gateY + 4} fontSize={11} fill="currentColor" opacity={0.7}>
+      <text x={GATE.x + 92} y={gateY + 4} fontSize={11} fill="currentColor" opacity={0.7}>
         the clients&apos; only way in
       </text>
 
       <g fill="currentColor">
-        <text x={2} y={34} fontSize={20} fontWeight={650} className="tabular-nums">
+        <text x={GATE.x} y={34} fontSize={20} fontWeight={650} className="tabular-nums">
           {frame.received}/{frame.expected}
         </text>
-        <text x={2} y={50} fontSize={11}>
+        <text x={GATE.x} y={50} fontSize={11}>
           updates
         </text>
         {frame.quorum !== null && (
-          <text x={2} y={65} fontSize={11} opacity={0.7}>
+          <text x={GATE.x} y={65} fontSize={11} opacity={0.7}>
             minimum {frame.quorum}
           </text>
         )}
@@ -318,23 +333,23 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
         opacity={down ? 0.7 : 1}
       />
       <g opacity={down ? 0.6 : 1}>
-        <text x={coordX} y={32} textAnchor="middle" fontSize={15} fontWeight={650} fill="currentColor">
+        <text x={coordX} y={COORD.y + COORD.h * 0.3} textAnchor="middle" fontSize={15} fontWeight={650} fill="currentColor">
           Coordinator
         </text>
-        <text key={frame.model} x={coordX} y={51} textAnchor="middle" fontSize={12} fontWeight={600} fill="var(--accent)" className="demo-fade">
+        <text key={frame.model} x={coordX} y={COORD.y + COORD.h * 0.56} textAnchor="middle" fontSize={12} fontWeight={600} fill="var(--accent)" className="demo-fade">
           global model v{frame.model}
         </text>
-        <text x={coordX} y={70} textAnchor="middle" fontSize={11} fill={down || failed ? RED : "currentColor"}>
+        <text x={coordX} y={COORD.y + COORD.h * 0.82} textAnchor="middle" fontSize={11} fill={down || failed ? RED : "currentColor"}>
           {COORDINATOR_LABEL[frame.coordinator]}
         </text>
       </g>
 
       {frame.deadline !== null && (
         <g>
-          <rect x={COORD.x} y={COORD.y + COORD.h + 5} width={COORD.w} height={4} rx={2} fill="currentColor" opacity={0.15} />
+          <rect x={COORD.x} y={COORD.y + COORD.h + 10} width={COORD.w} height={4} rx={2} fill="currentColor" opacity={0.15} />
           <rect
             x={COORD.x}
-            y={COORD.y + COORD.h + 5}
+            y={COORD.y + COORD.h + 10}
             width={COORD.w}
             height={4}
             rx={2}
@@ -345,7 +360,7 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
               transition: frame.kind === "open" ? "none" : `transform ${ms}ms linear`,
             }}
           />
-          <text x={COORD.x - 6} y={COORD.y + COORD.h + 10} textAnchor="end" fontSize={11} fill="currentColor">
+          <text x={COORD.x - 6} y={COORD.y + COORD.h + 15} textAnchor="end" fontSize={11} fill="currentColor">
             deadline
           </text>
         </g>
@@ -363,10 +378,10 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
         strokeDasharray={database ? undefined : "3 3"}
         className={frame.database ? "demo-pulse" : undefined}
       />
-      <text x={dbX} y={DB.y + 21} textAnchor="middle" fontSize={13} fontWeight={650} fill="currentColor">
+      <text x={dbX} y={DB.y + DB.h / 2 - 3} textAnchor="middle" fontSize={13} fontWeight={650} fill="currentColor">
         Database
       </text>
-      <text x={dbX} y={DB.y + 37} textAnchor="middle" fontSize={11} fill="currentColor" opacity={0.7}>
+      <text x={dbX} y={DB.y + DB.h / 2 + 13} textAnchor="middle" fontSize={11} fill="currentColor" opacity={0.7}>
         and model files
       </text>
 
@@ -377,19 +392,19 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
         const out = state === "dropout" || state === "late" || state === "rejected" || state === "blocked";
         return (
           <g key={c}>
-            <rect x={x - W / count / 2 + 3} y={CLIENT_TOP - 7} width={W / count - 6} height={H - CLIENT_TOP + 5} rx={10} fill="none" stroke="currentColor" strokeDasharray="2 4" opacity={0.3} />
-            <rect x={x - boxW / 2} y={CLIENT_TOP} width={boxW} height={54} rx={8} fill="var(--background)" stroke={color} strokeWidth={2.5} />
-            <text x={x} y={CLIENT_TOP + 19} textAnchor="middle" fontSize={13} fontWeight={650} fill="currentColor">
+            <rect x={x - W / count / 2 + 3} y={CLIENT_TOP - 8} width={W / count - 6} height={H - CLIENT_TOP + 6} rx={10} fill="none" stroke="currentColor" strokeDasharray="2 4" opacity={0.3} />
+            <rect x={x - boxW / 2} y={CLIENT_TOP} width={boxW} height={boxH} rx={8} fill="var(--background)" stroke={color} strokeWidth={2.5} />
+            <text x={x} y={CLIENT_TOP + boxH * 0.36} textAnchor="middle" fontSize={13} fontWeight={650} fill="currentColor">
               {c}
             </text>
-            <text x={x} y={CLIENT_TOP + 35} textAnchor="middle" fontSize={11} fill={color}>
+            <text x={x} y={CLIENT_TOP + boxH * 0.65} textAnchor="middle" fontSize={11} fill={color}>
               {STATE_LABEL[state]}
             </text>
             {state === "training" && (
               <rect
                 key={`${id}-${frame.round}`}
                 x={x - boxW / 2 + 8}
-                y={CLIENT_TOP + 42}
+                y={CLIENT_TOP + boxH - 12}
                 width={boxW - 16}
                 height={4}
                 rx={2}
@@ -404,7 +419,7 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
                 <path d="M-3.5 -3.5 L3.5 3.5 M3.5 -3.5 L-3.5 3.5" stroke="var(--background)" strokeWidth={2} />
               </g>
             )}
-            <g transform={`translate(${x - 31} ${CLIENT_TOP + 67})`} fill="currentColor">
+            <g transform={`translate(${x - 31} ${CLIENT_TOP + boxH + 14})`} fill="currentColor">
               <path d="M0 3 a6 3 0 0 1 12 0 v8 a6 3 0 0 1 -12 0 Z" fill="none" stroke="currentColor" strokeWidth={1.3} />
               <path d="M0 3 a6 3 0 0 0 12 0" fill="none" stroke="currentColor" strokeWidth={1.3} />
               <text x={18} y={11} fontSize={11}>
@@ -424,18 +439,17 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
 }
 
 const MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+const WIDE_QUERY = "(min-width: 768px)";
 
-// True when the visitor's system asks for less motion. Assumed on the server, so the replay
-// never starts moving before we know.
-function useReducedMotion(): boolean {
+function useMatchMedia(media: string, onServer: boolean): boolean {
   return useSyncExternalStore(
     (notify) => {
-      const query = window.matchMedia(MOTION_QUERY);
+      const query = window.matchMedia(media);
       query.addEventListener("change", notify);
       return () => query.removeEventListener("change", notify);
     },
-    () => window.matchMedia(MOTION_QUERY).matches,
-    () => true,
+    () => window.matchMedia(media).matches,
+    () => onServer,
   );
 }
 
@@ -451,7 +465,9 @@ export function DemoPlayer({ demo }: { demo: DemoRun }) {
   // their system asks for less motion.
   const [choice, setChoice] = useState<boolean | null>(null);
   const [speed, setSpeed] = useState(1);
-  const reduced = useReducedMotion();
+  // Assumed on the server, so the replay never starts moving before we know.
+  const reduced = useMatchMedia(MOTION_QUERY, true);
+  const stage = useRef<HTMLDivElement>(null);
   const playing = (choice ?? !reduced) && index < last;
 
   const frame = frames[index];
@@ -467,11 +483,16 @@ export function DemoPlayer({ demo }: { demo: DemoRun }) {
     setScenarioId(id);
     setIndex(0);
     setChoice(null);
+    stage.current?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
   };
   const jump = (i: number) => {
     setChoice(false);
     setIndex(i);
   };
+  // While playing, the slider glides to the next step for as long as this step lasts.
+  const position = (Math.min(last, index + (playing ? 1 : 0)) / last) * 100;
+  const glide = (property: string) =>
+    reduced ? "none" : `${property} ${playing ? ms : 150}ms ${playing ? "linear" : "ease-out"}`;
   const chapters = frames.flatMap((f, i) => (f.chapter ? [{ label: f.chapter, i }] : []));
   const button = "rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-surface disabled:opacity-40";
   const picks: { id: string | null; title: string; problem: string }[] = [
@@ -480,7 +501,7 @@ export function DemoPlayer({ demo }: { demo: DemoRun }) {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <div className="space-y-2">
         <h2 className="text-sm font-medium text-muted">Watch the full run, or one failure on its own</h2>
         <div role="group" aria-label="What to watch" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
@@ -502,10 +523,12 @@ export function DemoPlayer({ demo }: { demo: DemoRun }) {
         </div>
       </div>
 
-      <div className="grid items-start gap-8 lg:grid-cols-[3fr_2fr]">
-        <div className="space-y-4">
-          <Stage key={scenarioId ?? "run"} frame={frame} clients={demo.clients} animate={!reduced} ms={ms} id={`${index}`} />
+      <div ref={stage} className="scroll-mt-24">
+        <Stage key={scenarioId ?? "run"} frame={frame} clients={demo.clients} animate={!reduced} ms={ms} id={`${index}`} />
+      </div>
 
+      <div className="grid items-start gap-10 lg:grid-cols-[3fr_2fr]">
+        <div className="space-y-5">
           <div aria-live="polite" className="min-h-24 rounded-xl border-l-4 border-accent bg-accent-soft p-4">
             <p key={frame.caption} className="demo-fade text-base">
               {frame.caption}
@@ -548,7 +571,19 @@ export function DemoPlayer({ demo }: { demo: DemoRun }) {
               </span>
             </div>
 
-            <div className="relative">
+            {/* The input stays on top, invisible, for dragging and the keyboard. */}
+            <div className="relative h-6">
+              <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-border">
+                <div className="demo-scrub-fill h-full" style={{ clipPath: `inset(0 ${100 - position}% 0 0)`, transition: glide("clip-path") }} />
+              </div>
+              {chapters.slice(1).map((c) => (
+                <span
+                  key={c.i}
+                  aria-hidden
+                  className="pointer-events-none absolute top-1/2 h-3 w-0.5 -translate-y-1/2 bg-foreground/70"
+                  style={{ left: `${(c.i / last) * 100}%` }}
+                />
+              ))}
               <input
                 type="range"
                 min={0}
@@ -556,16 +591,13 @@ export function DemoPlayer({ demo }: { demo: DemoRun }) {
                 value={index}
                 onChange={(e) => jump(Number(e.target.value))}
                 aria-label="Position in the replay"
-                className="w-full accent-[var(--accent)]"
+                className="peer absolute inset-0 m-0 w-full cursor-pointer opacity-0"
               />
-              {chapters.slice(1).map((c) => (
-                <span
-                  key={c.i}
-                  aria-hidden
-                  className="pointer-events-none absolute -bottom-1 h-2 w-0.5 bg-accent"
-                  style={{ left: `${(c.i / last) * 100}%` }}
-                />
-              ))}
+              <span
+                aria-hidden
+                className="demo-scrub-thumb pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground peer-hover:h-5 peer-hover:w-5 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
+                style={{ left: `${position}%`, transition: glide("left") }}
+              />
             </div>
 
             {chapters.length > 0 && (

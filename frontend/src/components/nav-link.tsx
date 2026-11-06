@@ -2,18 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 /** A menu link that shows when it is the current page. `exact` for "/" and "/app". */
 export function NavLink({
   href,
   exact,
   variant = "top",
+  hover,
   children,
 }: {
   href: string;
   exact?: boolean;
   variant?: "top" | "tab";
+  /** Colour on hover, for the top menu. */
+  hover?: string;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -31,7 +34,12 @@ export function NavLink({
         ? "bg-accent-soft font-medium text-accent"
         : "text-muted hover:bg-surface hover:text-foreground";
   return (
-    <Link href={href} aria-current={active ? "page" : undefined} className={`${base} ${state}`}>
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={`${base} ${state} ${hover ? "nav-hover" : ""}`}
+      style={hover ? ({ "--hover": hover } as CSSProperties) : undefined}
+    >
       {children}
     </Link>
   );

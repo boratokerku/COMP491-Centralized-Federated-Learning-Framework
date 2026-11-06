@@ -19,8 +19,10 @@ function start(canvas: HTMLCanvasElement, moving: boolean) {
   if (!ctx) return () => {};
 
   const css = getComputedStyle(canvas);
-  const tones = ["--danger", "--warning", "--accent", "--mint"].map((v) => css.getPropertyValue(v).trim());
-  const mint = tones[3];
+  const [danger, warning, blue, mint] = ["--danger", "--warning", "--accent", "--mint"].map((v) =>
+    css.getPropertyValue(v).trim(),
+  );
+  const tones = [blue, danger, warning, mint];
 
   let w = 0;
   let h = 0;
@@ -44,7 +46,7 @@ function start(canvas: HTMLCanvasElement, moving: boolean) {
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       r: 2.5 + Math.random() * 2,
-      color: tones[Math.floor(Math.random() * tones.length)],
+      color: tones[clients.length % tones.length],
       glow: 0,
     };
     clients.push(client);

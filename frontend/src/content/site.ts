@@ -2,11 +2,11 @@ export const REPO_URL =
   "https://github.com/boratokerku/COMP491-Centralized-Federated-Learning-Framework";
 
 export const nav = [
-  { href: "/", label: "Home" },
-  { href: "/demo", label: "How it works" },
-  { href: "/docs", label: "Documentation" },
-  { href: "/results", label: "Results" },
-  { href: "/team", label: "Team FedUp and Advisors" },
+  { href: "/", label: "Home", hover: "var(--danger)" },
+  { href: "/demo", label: "How it works", hover: "var(--warning)" },
+  { href: "/docs", label: "Documentation", hover: "var(--mint)" },
+  { href: "/results", label: "Results", hover: "var(--accent)" },
+  { href: "/team", label: "Team FedUp and Advisors", hover: "var(--lilac)" },
 ];
 
 export const team = [
