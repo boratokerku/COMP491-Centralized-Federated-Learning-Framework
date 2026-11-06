@@ -1,0 +1,15 @@
+import { guard, notFound } from "@/lib/api";
+import { REPORT_FILES, readReport } from "@/lib/reports";
+
+export async function GET(
+  _: Request,
+  ctx: RouteContext<"/api/v1/runs/[runId]/reports/metrics.csv">,
+) {
+  const denied = await guard();
+  if (denied) return denied;
+  const body = await readReport((await ctx.params).runId, "metrics.csv");
+  if (!body) return notFound("report file");
+  return new Response(new Uint8Array(body), {
+    headers: { "Content-Type": REPORT_FILES["metrics.csv"].type },
+  });
+}
