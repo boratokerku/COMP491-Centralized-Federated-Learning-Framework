@@ -128,3 +128,30 @@ Same scheme as the tabular dataset, applied after de-duplication: stratified 20%
 | held-out test | 1,035 | 131 | 0.1266 |
 
 The dataset is small: each client's val split holds only 13 spam messages, so per-client val metrics are noisy. Report per-client results with that in mind, and prefer the held-out test set for comparisons between runs.
+
+### Initial federated text hyperparameter screen
+
+Reproduce with `python backend/scripts/tune_text.py` (or, from `backend/`,
+`python scripts/tune_text.py`). The script changes one setting at a time from the baseline,
+uses the same seed-42 data partitions, and runs seeds 42, 43, and 44 for 20 rounds each.
+It records final held-out F1, ROC-AUC, PR-AUC, accuracy, best round F1, and an F1 stability
+round. Stability is the first round after which every remaining global F1 is within 0.005
+of that run's final F1. Raw run records and aggregate results are in
+`results/text_tuning/runs.csv`, `results/text_tuning/summary.csv`, and
+`results/text_tuning/results.json`.
+
+| Setting | Learning rate | Local epochs | Batch size | Class weights | Final F1 (mean ± SD) | ROC-AUC (mean ± SD) | PR-AUC (mean ± SD) | Accuracy (mean ± SD) | Stable round (mean) |
+|---|---:|---:|---:|---|---:|---:|---:|---:|---:|
+| Baseline | 0.010 | 1 | 64 | [1.0, 6.9] | 0.862 ± 0.010 | 0.988 ± 0.001 | 0.937 ± 0.015 | 0.963 ± 0.003 | 18.7 |
+| Learning rate 0.005 | 0.005 | 1 | 64 | [1.0, 6.9] | 0.853 ± 0.012 | 0.988 ± 0.002 | 0.944 ± 0.010 | 0.960 ± 0.003 | 18.3 |
+| Local epochs 2 | 0.010 | 2 | 64 | [1.0, 6.9] | 0.865 ± 0.012 | 0.986 ± 0.001 | 0.908 ± 0.020 | 0.964 ± 0.003 | 14.0 |
+| Batch size 32 | 0.010 | 1 | 32 | [1.0, 6.9] | 0.863 ± 0.004 | 0.986 ± 0.001 | 0.924 ± 0.008 | 0.963 ± 0.002 | 20.0 |
+| Spam weight 5.0 | 0.010 | 1 | 64 | [1.0, 5.0] | **0.868 ± 0.011** | 0.988 ± 0.001 | 0.940 ± 0.015 | **0.965 ± 0.003** | 17.0 |
+
+All 15 runs completed all 20 rounds and all four clients verified the final model. The
+weight-5 setting had the highest mean final F1 and accuracy in this small screen, so it is
+the provisional candidate in `sim_text.yaml` and `demo_text.yaml`. This is exploratory:
+each setting has only three seeds and all runs reuse one fixed partition. Because these
+metrics use the held-out test set, the comparison should not be treated as an unbiased final
+test after selecting a setting. Re-evaluate the selected configuration on a fresh test set
+or use validation metrics for future tuning; report the test-set reuse as a limitation.
