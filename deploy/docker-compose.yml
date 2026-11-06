@@ -104,6 +104,18 @@ services:
       GF_SERVER_ROOT_URL: https://${CFL_WEB_DOMAIN:-localhost}/grafana/
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Login happens on the website; Caddy forwards the verified user name (Caddyfile).
+      # Grafana is not published on a host port, so only Caddy can send this header.
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: X-WEBAUTH-USER
+      GF_AUTH_PROXY_HEADER_PROPERTY: username
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: Viewer
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # The website embeds dashboards in an iframe on the same host.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: lax
       CFL_WEB_DB_PASSWORD: ${CFL_WEB_DB_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-cfl}
     volumes:
