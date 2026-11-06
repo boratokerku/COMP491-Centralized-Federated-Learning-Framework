@@ -1,4 +1,5 @@
 import { HeroTyping } from "@/components/hero-typing";
+import type { CSSProperties } from "react";
 import { ButtonLink, Card } from "@/components/ui";
 import { updates } from "@/content/site";
 
@@ -21,10 +22,10 @@ const features = [
 ];
 
 const steps = [
-  ["1", "Open", "bg-danger", "text-danger", "The coordinator opens a round and each client downloads the current global model through the gateway."],
-  ["2", "Train", "bg-warning", "text-warning", "Each client trains on its own data. The data never leaves its machine."],
-  ["3", "Report", "bg-accent", "text-accent", "Clients upload only their model updates through the gateway, which stores them."],
-  ["4", "Combine", "bg-mint", "text-mint", "The coordinator reads the stored updates and averages them into a new global model."],
+  ["1", "Open", "var(--danger)", "The coordinator opens a round and each client downloads the current global model through the gateway."],
+  ["2", "Train", "var(--warning)", "Each client trains on its own data. The data never leaves its machine."],
+  ["3", "Report", "var(--accent)", "Clients upload only their model updates through the gateway, which stores them."],
+  ["4", "Combine", "var(--mint)", "The coordinator reads the stored updates and averages them into a new global model."],
 ];
 
 export default function Home() {
@@ -53,7 +54,7 @@ export default function Home() {
         </p>
         <div className="grid gap-4 sm:grid-cols-3">
           {features.map((f) => (
-            <Card key={f.title} className={`border-t-2 ${f.tone}`}>
+            <Card key={f.title} className={`lift-card border-t-2 ${f.tone}`}>
               <h3 className="font-semibold">{f.title}</h3>
               <p className="mt-2 text-sm text-muted">{f.text}</p>
             </Card>
@@ -64,12 +65,17 @@ export default function Home() {
       <section className="space-y-4">
         <h2 className="text-2xl font-semibold">How a round works</h2>
         <ol className="grid gap-4 sm:grid-cols-4">
-          {steps.map(([n, title, fill, color, text]) => (
-            <li key={n} className="space-y-2">
-              <span className={`grid h-8 w-8 place-items-center rounded-full text-sm font-semibold text-background ${fill}`}>
+          {steps.map(([n, title, tone, text], i) => (
+            <li
+              key={n}
+              className="round-step space-y-2"
+              style={{ "--i": i, "--tone": tone, "--next": steps[i + 1]?.[2] } as CSSProperties}
+            >
+              <span className="round-dot grid h-8 w-8 place-items-center rounded-full bg-(--tone) text-sm font-semibold text-background">
                 {n}
               </span>
-              <h3 className={`font-semibold ${color}`}>{title}</h3>
+              {i < steps.length - 1 && <span aria-hidden className="round-link" />}
+              <h3 className="font-semibold text-(--tone)">{title}</h3>
               <p className="text-sm text-muted">{text}</p>
             </li>
           ))}

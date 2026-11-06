@@ -77,6 +77,94 @@ summary:focus-visible {
   }
 }
 
+/* Home page. The four steps light up in turn: each takes one quarter of the 6s loop. */
+.lift-card {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.round-step {
+  position: relative;
+  transition: transform 0.2s ease;
+}
+
+@media (hover: hover) {
+  .lift-card:hover {
+    transform: translateY(-4px);
+    border-color: currentColor;
+    box-shadow: 0 12px 28px -16px currentColor;
+  }
+
+  .round-step:hover {
+    transform: translateY(-4px);
+  }
+}
+
+.round-dot {
+  animation: round-dot 6s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 1.5s);
+}
+
+/* Side by side only: on a phone the steps stack and a line would cross their text. */
+.round-link {
+  display: none;
+  position: absolute;
+  top: 15px;
+  right: -8px;
+  left: 40px;
+  height: 2px;
+  overflow: hidden;
+  background: var(--border);
+}
+
+.round-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--tone), var(--next));
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: round-link 6s linear infinite;
+  animation-delay: calc(var(--i) * 1.5s + 0.4s);
+}
+
+@media (min-width: 40rem) {
+  .round-link {
+    display: block;
+  }
+}
+
+@keyframes round-dot {
+  0%,
+  25%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  8% {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--tone) 25%, transparent);
+  }
+}
+
+@keyframes round-link {
+  0% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+  18% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  30%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
 /* The "how it works" replay. Only motion lives here, so without it every frame still reads. */
 .demo-packet {
   offset-rotate: 0deg;
@@ -157,6 +245,13 @@ summary:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .lift-card,
+  .round-step {
+    transition: none;
+  }
+
+  .round-dot,
+  .round-link::after,
   .demo-pulse,
   .demo-pop,
   .demo-fade,
