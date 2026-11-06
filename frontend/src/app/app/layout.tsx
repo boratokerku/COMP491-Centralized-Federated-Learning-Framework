@@ -26,7 +26,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 pt-3">
           <div className="flex items-center gap-3">
             <Link href="/app" className="flex items-center gap-2 font-semibold">
-              <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-xs font-bold text-white">
+              <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-xs font-bold text-background">
                 FL
               </span>
               FedUp

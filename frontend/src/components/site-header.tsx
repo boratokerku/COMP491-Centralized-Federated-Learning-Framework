@@ -7,7 +7,7 @@ export function SiteHeader() {
     <header className="top-0 z-10 border-b md:sticky border-border bg-background/90 backdrop-blur">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
         <Link href="/" className="flex items-center gap-2 font-semibold">
-          <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-xs font-bold text-white">
+          <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-xs font-bold text-background">
             FL
           </span>
           FedUp
@@ -28,7 +28,7 @@ export function SiteHeader() {
           <Link
             href="/login"
             prefetch={false}
-            className="ml-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+            className="ml-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-background hover:opacity-90"
           >
             Admin login
           </Link>
