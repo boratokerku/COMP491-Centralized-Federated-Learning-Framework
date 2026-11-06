@@ -24,6 +24,14 @@ export function SiteHeader() {
           >
             GitHub
           </a>
+          {/* A signed-in visitor is sent on to /app by the login page. */}
+          <Link
+            href="/login"
+            prefetch={false}
+            className="ml-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+          >
+            Admin login
+          </Link>
         </nav>
       </div>
     </header>
