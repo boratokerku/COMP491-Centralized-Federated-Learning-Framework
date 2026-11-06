@@ -5,6 +5,7 @@ import { currentUser } from "@/lib/auth/guard";
 const links = [
   { href: "/app/rounds", label: "Live round" },
   { href: "/app/runs", label: "Runs" },
+  { href: "/app/dashboards", label: "Dashboards" },
   { href: "/app/updates", label: "Update inbox" },
   { href: "/app/logs", label: "Event log" },
   { href: "/app/clients", label: "Clients" },
