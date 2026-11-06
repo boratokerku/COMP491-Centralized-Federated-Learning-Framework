@@ -1,4 +1,4 @@
-"""Seeded IID partitioning of a labelled dataset into simulated client sites (any modality).
+"""Seeded partitioning of a labelled dataset into simulated client sites (any modality).
 
 Each client partition stands for one organization's private data and is split into
 train / val / test: train for local training, val for per-round federated evaluation and
@@ -76,24 +76,60 @@ def iid_partition(
         folds = StratifiedKFold(n_splits=num_clients, shuffle=True, random_state=seed)
         shards = [pool.iloc[idx] for _, idx in folds.split(pool, labels(pool))]
 
-    clients = []
-    for shard in shards:
-        rest, local_test = train_test_split(
-            shard, test_size=local_test_size, stratify=labels(shard), random_state=seed
-        )
-        train, val = train_test_split(
-            rest,
-            test_size=local_val_size / (1 - local_test_size),
-            stratify=labels(rest),
-            random_state=seed,
-        )
-        clients.append(
-            ClientPartition(
-                train.reset_index(drop=True),
-                val.reset_index(drop=True),
-                local_test.reset_index(drop=True),
-            )
-        )
+    clients = [_local_splits(s, labels, seed, local_val_size, local_test_size) for s in shards]
+    return Partitioning(clients, test.reset_index(drop=True))
+
+
+def _local_splits(
+    shard: pd.DataFrame, labels: LabelFn, seed: int, local_val_size: float, local_test_size: float
+) -> ClientPartition:
+    def split(part: pd.DataFrame, size: float) -> list[pd.DataFrame]:
+        counts = np.bincount(labels(part), minlength=2)
+        stratify = labels(part) if counts.min() >= 2 else None  # a skewed client may lack a class
+        return train_test_split(part, test_size=size, stratify=stratify, random_state=seed)
+
+    rest, local_test = split(shard, local_test_size)
+    train, val = split(rest, local_val_size / (1 - local_test_size))
+    return ClientPartition(
+        train.reset_index(drop=True),
+        val.reset_index(drop=True),
+        local_test.reset_index(drop=True),
+    )
+
+
+def label_skew_partition(
+    pool: pd.DataFrame,
+    test: pd.DataFrame,
+    labels: LabelFn,
+    num_clients: int,
+    seed: int,
+    alpha: float,
+    local_val_size: float = 0.1,
+    local_test_size: float = 0.2,
+    min_rows: int = 40,
+) -> Partitioning:
+    """Non-IID clients: each class is shared out with Dirichlet(alpha) proportions, so a small
+    `alpha` gives clients very different class ratios. `test` stays as given, which keeps
+    results comparable with the IID partitions of the same data."""
+    if alpha <= 0:
+        raise ValueError("alpha must be positive")
+    pool = pool.reset_index(drop=True)
+    y = labels(pool)
+    rng = np.random.default_rng(seed)
+    for _ in range(1000):
+        members: list[list[int]] = [[] for _ in range(num_clients)]
+        for label in np.unique(y):
+            rows = rng.permutation(np.flatnonzero(y == label))
+            shares = rng.dirichlet([alpha] * num_clients)
+            cuts = (np.cumsum(shares)[:-1] * len(rows)).astype(int)
+            for client, part in enumerate(np.split(rows, cuts)):
+                members[client].extend(part.tolist())
+        if min(len(m) for m in members) >= min_rows:
+            break
+    else:
+        raise ValueError(f"no split with {min_rows} rows per client; raise alpha")
+    shards = [pool.iloc[sorted(m)] for m in members]
+    clients = [_local_splits(s, labels, seed, local_val_size, local_test_size) for s in shards]
     return Partitioning(clients, test.reset_index(drop=True))
 
 

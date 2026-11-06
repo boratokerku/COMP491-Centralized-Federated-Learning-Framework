@@ -157,11 +157,24 @@ def render_markdown(summary: dict[str, Any], plots: list[str]) -> str:
         out += _table(["Message type", *header], rows)
     else:
         out += [
-            "No per-message gateway metrics (`transfer_ms`, `message_bytes`, `rtt_ms`, "
+            "No per-message metrics (`transfer_ms`, `gateway_ms`, `message_bytes`, `rtt_ms`, "
             "`retry_count`) were recorded for this run, for example because it ran as a "
             "local simulation.",
             "",
         ]
+
+    totals = summary["communication_totals"]
+    if totals["bytes"]:
+        out += ["### Total bytes transmitted", ""]
+        rows = [[f"`{k}`", _num(v)] for k, v in totals["bytes_by_message_type"].items()]
+        rows.append(["**all messages**", _num(totals["bytes"])])
+        out += _table(["Message type", "Bytes"], rows)
+
+    out += ["## Reliability", ""]
+    out += _table(
+        ["Measure", "Count"],
+        [[k.replace("_", " "), _num(v)] for k, v in summary["reliability"].items()],
+    )
 
     out += ["## Events", ""]
     counts = summary["event_counts"]

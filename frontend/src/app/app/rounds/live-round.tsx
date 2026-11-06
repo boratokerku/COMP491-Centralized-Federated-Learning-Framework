@@ -106,7 +106,7 @@ export function LiveRound({
       </p>
 
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-danger">
           Could not refresh ({error}). Showing the last data received.
         </p>
       )}

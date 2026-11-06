@@ -4,6 +4,8 @@ import { REPO_URL, advisors, team } from "@/content/site";
 
 export const metadata: Metadata = { title: "Team" };
 
+const TONES = ["var(--danger)", "var(--warning)", "var(--accent)", "var(--mint)"];
+
 const initials = (name: string) =>
   name
     .split(" ")
@@ -24,9 +26,12 @@ export default function Team() {
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Students</h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          {team.map((m) => (
+          {team.map((m, i) => (
             <Card key={m.name} className="flex gap-4">
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-accent-soft font-semibold text-accent">
+              <span
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-full font-semibold text-background"
+                style={{ background: TONES[i % TONES.length] }}
+              >
                 {initials(m.name)}
               </span>
               <div>

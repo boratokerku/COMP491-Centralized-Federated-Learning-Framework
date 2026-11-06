@@ -109,6 +109,7 @@ Two endpoints answer with their own body instead because the outcome is a result
 | 6. GET  /model/{run_id}/{version}  -> Download global model weights (.safetensors + SHA-256)       |
 | 7. POST /update                    -> Upload local update weights & metrics (idempotent)           |
 | 8. GET  /model/{run_id}/final      -> Download the final verified model (ONNX / safetensors)       |
+| 9. POST /transfer                  -> Optional: report how long a transfer took for the client     |
 +----------------------------------------------------------------------------------------------------+
 ```
 
@@ -409,6 +410,16 @@ Downloads the final model artifact of a completed run.
 
 #### Client-Side Action
 Download `onnx` and `artifact` (and optionally `manifest`, `safetensors`), then call `cfl.core.artifact.verify_artifact(files, X-Final-Model-SHA256)`: it checks every checksum and reproduces the reference predictions with ONNX Runtime. Pre-processing (scaling, one-hot encoding or tokenization) is not part of the ONNX graph; apply it as described in `artifact.json` → `preprocessing`.
+
+### 3.8 `POST /transfer`
+Optional. Reports how long a transfer took as the client observed it, including the network. The gateway cannot measure this itself: it stops timing a download before the bytes leave, and an upload has already arrived when its handler starts.
+
+- **Access:** registered clients that take part in the run.
+- **Body (`TransferReport`):** `run_id`, `round_id` (null for `register`, `conformance` and `final_model_download`), `message_type` (`register`, `conformance`, `task`, `model_download`, `update_upload` or `final_model_download`), `duration_ms` (>= 0), `message_bytes` (optional, request plus response body).
+- **Response:** `204 No Content`. **`403 not_participant`**, **`404 unknown_run`**, **`422`** on an invalid body.
+- **Database:** a `metrics` row `transfer_ms` with the client id and message type, plus `message_bytes` for the three control messages.
+
+Time the last successful attempt. Clients that do not call this endpoint still train normally; only their `transfer_ms` is missing.
 
 ---
 

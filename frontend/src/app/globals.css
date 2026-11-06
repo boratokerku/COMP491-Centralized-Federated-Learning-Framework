@@ -1,13 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --surface: #f8fafc;
-  --foreground: #0f172a;
-  --muted: #64748b;
-  --border: #e2e8f0;
-  --accent: #2563eb;
-  --accent-soft: #eff6ff;
+  color-scheme: dark;
+  --background: #020403;
+  --surface: #0c100e;
+  --foreground: #f2f4f3;
+  --muted: #9ba5a1;
+  --border: #232927;
+  --accent: #0080fe;
+  --accent-soft: #021526;
+  --danger: #ff003f;
+  --danger-soft: #25030c;
+  --warning: #ffbf00;
+  --warning-soft: #251e03;
+  --mint: #98fb98;
+  --lilac: #c8a2c8;
 }
 
 @theme inline {
@@ -18,20 +25,18 @@
   --color-border: var(--border);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-mint: var(--mint);
   --font-sans: var(--font-stolzl), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0b0f17;
-    --surface: #111827;
-    --foreground: #e5e7eb;
-    --muted: #94a3b8;
-    --border: #1f2937;
-    --accent: #60a5fa;
-    --accent-soft: #172033;
-  }
+/* Space for the scrollbar stays reserved, so short pages do not shift sideways. */
+html {
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -39,6 +44,7 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
 }
 
 h1,
@@ -58,7 +64,267 @@ summary:focus-visible {
   border-radius: 4px;
 }
 
+/* The typed title and intro on the home page. */
+.typing-rest {
+  visibility: hidden;
+}
+
+.typing-caret {
+  display: inline-block;
+  width: 2px;
+  height: 0.75em;
+  margin-right: -2px;
+  background: var(--accent);
+  animation: typing-blink 1s step-end infinite;
+}
+
+@keyframes typing-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* The top menu: every tab has its own colour, on hover and while its page is open. */
+.nav-hover[aria-current="page"] {
+  background: color-mix(in srgb, var(--hover) 15%, transparent);
+  color: var(--hover);
+}
+
+/* Once the sliding pill is in place it takes over the background of the open tab. */
+nav[data-pill] .nav-hover[aria-current="page"] {
+  background: transparent;
+}
+
+.nav-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  border-radius: 0.375rem;
+  background: color-mix(in srgb, var(--pill) 15%, transparent);
+  transition:
+    transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.35s ease;
+}
+
+/* The same for the internal area, whose tabs are marked by a line. */
+nav[data-pill] a[aria-current="page"].border-accent {
+  border-color: transparent;
+}
+
+.nav-underline {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+  transition:
+    transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.page-enter {
+  animation: page-enter 0.4s ease-out backwards;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@media (hover: hover) {
+  .nav-hover:hover {
+    background: color-mix(in srgb, var(--hover) 15%, transparent);
+    color: var(--hover);
+  }
+}
+
+/* Home page. The four steps light up in turn: each takes one quarter of the 6s loop. */
+.lift-card {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.round-step {
+  position: relative;
+  transition: transform 0.2s ease;
+}
+
+@media (hover: hover) {
+  .lift-card:hover {
+    transform: translateY(-4px);
+    border-color: currentColor;
+    box-shadow: 0 12px 28px -16px currentColor;
+  }
+
+  .round-step:hover {
+    transform: translateY(-4px);
+  }
+}
+
+.round-dot {
+  animation: round-dot 6s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 1.5s);
+}
+
+/* Side by side only: on a phone the steps stack and a line would cross their text. */
+.round-link {
+  display: none;
+  position: absolute;
+  top: 15px;
+  right: -8px;
+  left: 40px;
+  height: 2px;
+  overflow: hidden;
+  background: var(--border);
+}
+
+.round-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--tone), var(--next));
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: round-link 6s linear infinite;
+  animation-delay: calc(var(--i) * 1.5s + 0.4s);
+}
+
+@media (min-width: 40rem) {
+  .round-link {
+    display: block;
+  }
+}
+
+@keyframes round-dot {
+  0%,
+  25%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  8% {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--tone) 25%, transparent);
+  }
+}
+
+@keyframes round-link {
+  0% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+  18% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  30%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+/* Home page progress. Everything stays visible until the script has marked the list ready. */
+.timeline {
+  position: relative;
+  isolation: isolate;
+}
+
+.timeline::before,
+.timeline::after {
+  content: "";
+  position: absolute;
+  top: 24px;
+  left: 15px;
+  width: 2px;
+}
+
+.timeline::before {
+  height: var(--rail, 0);
+  background: var(--border);
+}
+
+.timeline::after {
+  height: var(--fill, 0);
+  background-image: var(--rail-colors);
+  background-size: 100% var(--rail, 100%);
+  transition: height 0.15s linear;
+}
+
+/* Solid and above the line, so the line never crosses a label. */
+.timeline-dot {
+  z-index: 1;
+  transition:
+    background-color 0.35s ease,
+    color 0.35s ease,
+    transform 0.35s ease;
+}
+
+.timeline-body {
+  transition: opacity 0.35s ease;
+}
+
+.timeline[data-ready] > li:not([data-lit]) .timeline-dot {
+  background-color: var(--surface);
+  color: var(--muted);
+  transform: scale(0.85);
+}
+
+.timeline[data-ready] > li:not([data-lit]) .timeline-body {
+  opacity: 0.35;
+}
+
+.timeline > li[data-lit] .timeline-bullet {
+  animation: timeline-in 0.4s ease-out both;
+  animation-delay: calc(var(--n) * 80ms);
+}
+
+.timeline-latest[data-lit] .timeline-dot {
+  animation: timeline-pulse 2s ease-out infinite;
+}
+
+.timeline-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+}
+
+.timeline-panel[data-open] {
+  grid-template-rows: 1fr;
+}
+
+@keyframes timeline-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes timeline-pulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 60%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 14px transparent;
+  }
+}
+
 /* The "how it works" replay. Only motion lives here, so without it every frame still reads. */
+.demo-scrub-fill {
+  background: linear-gradient(90deg, var(--danger), var(--warning), var(--mint), var(--accent));
+}
+
+.demo-scrub-thumb {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
 .demo-packet {
   offset-rotate: 0deg;
   animation: demo-move var(--dur) ease-in-out both;
@@ -138,6 +404,22 @@ summary:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .nav-pill,
+  .nav-underline,
+  .lift-card,
+  .round-step,
+  .timeline::after,
+  .timeline-dot,
+  .timeline-body,
+  .timeline-panel {
+    transition: none;
+  }
+
+  .page-enter,
+  .round-dot,
+  .round-link::after,
+  .timeline-bullet,
+  .timeline-latest[data-lit] .timeline-dot,
   .demo-pulse,
   .demo-pop,
   .demo-fade,

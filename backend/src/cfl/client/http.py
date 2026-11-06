@@ -32,6 +32,7 @@ from cfl.protocol.messages import (
     RegisterRequest,
     RegisterResponse,
     TaskAssignment,
+    TransferReport,
     UpdateAck,
     UpdateMetadata,
 )
@@ -80,6 +81,8 @@ class TransferStats:
     retries: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     bytes: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     seconds: dict[str, float] = field(default_factory=lambda: defaultdict(float))
+    last_seconds: dict[str, float] = field(default_factory=dict)  # last successful request
+    last_bytes: dict[str, int] = field(default_factory=dict)  # its request + response bodies
 
 
 def _tls_failure(exc: BaseException) -> bool:
@@ -158,11 +161,15 @@ class HttpTransport(Transport):
                 last = exc
                 continue
             finally:
-                self.stats.seconds[message_type] += time.perf_counter() - start
+                elapsed = time.perf_counter() - start
+                self.stats.seconds[message_type] += elapsed
             if response.status_code in RETRY_STATUSES:
                 last = GatewayHTTPError(response.status_code, "unavailable", "gateway busy")
                 continue
             self.stats.bytes[message_type] += len(response.content)
+            self.stats.last_seconds[message_type] = elapsed
+            sent = int(response.request.headers.get("content-length", 0))
+            self.stats.last_bytes[message_type] = sent + len(response.content)
             return response
         raise GatewayUnavailable(
             f"{method} {url} failed after {self.retry.max_attempts} attempts: {last}"
@@ -221,6 +228,24 @@ class HttpTransport(Transport):
         except ValueError:  # the error schema: the update was never considered
             raise _error(response) from None
 
+    def report_transfer(self, run_id: str, round_id: int | None, message_type: str) -> None:
+        """Tell the gateway how long the last transfer of this type took. This is only a
+        measurement, so a failure here must not disturb training."""
+        seconds = self.stats.last_seconds.get(message_type)
+        if seconds is None:
+            return
+        report = TransferReport(
+            run_id=run_id,
+            round_id=round_id,
+            message_type=message_type,
+            duration_ms=seconds * 1000,
+            message_bytes=self.stats.last_bytes.get(message_type),
+        )
+        try:
+            self._request("transfer", "POST", "/transfer", json=report.model_dump())
+        except GatewayUnavailable:
+            pass
+
     def download_final_artifact(self, run_id: str) -> tuple[dict[str, bytes], str] | None:
         """All final artifact files and the server-published SHA-256 of model.onnx, or None
         while the run is still in progress."""
@@ -235,6 +260,7 @@ class HttpTransport(Transport):
             if response.status_code != 200:
                 raise _error(response)
             files[name] = response.content
+            self.report_transfer(run_id, None, "final_model_download")
             onnx_sha = response.headers.get("x-final-model-sha256", onnx_sha)
         if onnx_sha is None:
             raise ChecksumError("the gateway did not publish the final model checksum")
