@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildFrames, buildScenarios, COORDINATOR, DATABASE, type DemoRun } from "./demo-frames.ts";
+import { buildFrames, buildScenarios, COORDINATOR, DATABASE, GATEWAY, type DemoRun } from "./demo-frames.ts";
 
 const names = ["Client A", "Client B", "Client C"];
 const demo: DemoRun = {
@@ -33,7 +33,7 @@ test("the first round shows every step and each client's report on its own", () 
 test("the global model reaches every client when a round opens", () => {
   const opening = frames.find((f) => f.kind === "open")!;
   assert.deepEqual(opening.packets.map((p) => p.to), names);
-  assert.ok(opening.packets.every((p) => p.from === COORDINATOR && p.kind === "model" && p.label === "v0"));
+  assert.ok(opening.packets.every((p) => p.from === DATABASE && p.kind === "model" && p.label === "v0"));
 });
 
 test("a dropout waits for the deadline and the client stays dropped for the round", () => {
@@ -90,7 +90,7 @@ test("jump targets mark the normal round and both failures", () => {
 
 test("every report frame moves an update for each client it names", () => {
   for (const f of frames.filter((x) => x.kind === "report")) {
-    assert.ok(f.packets.every((p) => p.kind === "update" && p.to === COORDINATOR));
+    assert.ok(f.packets.every((p) => p.kind === "update" && p.to === DATABASE));
     if (f.client) assert.equal(f.packets[0].from, f.client);
   }
 });
@@ -117,8 +117,8 @@ test("a dropped client is selected again in the next round", () => {
 
 test("updates that arrive during a crash wait in the database", () => {
   const frames = scenario("crash").frames;
-  const outage = frames.find((f) => f.packets.some((p) => p.to === DATABASE))!;
-  assert.equal(outage.coordinator, "down");
+  const outage = frames.find((f) => f.coordinator === "down" && f.packets.length > 0)!;
+  assert.ok(outage.packets.every((p) => p.to === DATABASE));
   assert.ok(events("crash").includes("COORDINATOR_RESUMED"));
   assert.equal(frames.at(-1)!.received, 4);
 });
@@ -153,9 +153,25 @@ test("a broken update never reaches the average", () => {
   assert.ok(details("broken").includes("sanity_check_failed"));
 });
 
-test("a client that fails conformance gets no model", () => {
+test("the broken update is excluded after aggregation starts, as the system logs it", () => {
+  const log = events("broken");
+  assert.ok(log.indexOf("ROUND_AGGREGATING") < log.indexOf("UPDATE_EXCLUDED"));
+  assert.equal(log.filter((e) => e === "ROUND_AGGREGATING").length, 1);
+});
+
+test("clients never talk to the coordinator directly", () => {
+  const all = [...frames, ...scenarios.flatMap((s) => s.frames)];
+  for (const { from, to } of all.flatMap((f) => f.packets)) {
+    if (from === COORDINATOR) assert.equal(to, DATABASE);
+    if (to === COORDINATOR) assert.equal(from, DATABASE);
+  }
+});
+
+test("a client that fails conformance is refused by the gateway and gets no model", () => {
   const opening = scenario("conformance").frames.find((f) => f.kind === "open")!;
   assert.ok(opening.packets.every((p) => p.to !== "Client D"));
+  const reports = scenario("conformance").frames[0].packets;
+  assert.ok(reports.every((p) => p.to === GATEWAY));
   assert.equal(opening.clients["Client D"], "blocked");
   assert.equal(opening.expected, 3);
 });

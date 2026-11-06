@@ -6,6 +6,7 @@ import {
   buildScenarios,
   COORDINATOR,
   DATABASE,
+  GATEWAY,
   type ClientState,
   type CoordinatorState,
   type DemoRun,
@@ -15,10 +16,11 @@ import {
 } from "@/lib/demo-frames";
 
 const W = 420;
-const H = 286;
-const COORD = { x: 125, y: 12, w: 140, h: 72 };
-const DB = { x: 312, y: 24, w: 100, h: 44 };
-const CLIENT_TOP = 178;
+const H = 324;
+const COORD = { x: 110, y: 12, w: 140, h: 72 };
+const DB = { x: 300, y: 22, w: 112, h: 48 };
+const GATE = { x: 6, y: 122, w: 408, h: 34 };
+const CLIENT_TOP = 216;
 
 const GREEN = "#059669";
 const RED = "#dc2626";
@@ -48,7 +50,7 @@ const STATE_LABEL: Record<ClientState, string> = {
 const COORDINATOR_LABEL: Record<CoordinatorState, string> = {
   waiting: "waiting",
   checking: "checking",
-  sending: "sending the model",
+  opening: "opening the round",
   collecting: "collecting updates",
   down: "stopped",
   restarting: "restarting",
@@ -173,6 +175,8 @@ function PacketShape({ packet }: { packet: Packet }) {
       return text(packet.label ?? "model", 30);
     case "state":
       return text("state", 36);
+    case "updates":
+      return text("updates", 50);
     case "report":
       return text("report", 40);
     case "ack":
@@ -196,20 +200,15 @@ function PacketShape({ packet }: { packet: Packet }) {
   }
 }
 
-// One moving packet. A refused or lost one stops short of where it was going.
-function MovingPacket({ packet, from, to, ms }: { packet: Packet; from: Point; to: Point; ms: number }) {
-  const reach = packet.fate === "refused" ? 0.82 : packet.fate === "lost" ? 0.55 : 1;
+// One moving packet along a route of straight pieces. A refused or lost one stops short.
+function MovingPacket({ packet, route, ms }: { packet: Packet; route: Point[]; ms: number }) {
+  const reach = packet.fate === "refused" ? 0.8 : packet.fate === "lost" ? 0.55 : 1;
+  const stops = route.slice(0, -1);
+  const [a, b] = route.slice(-2);
+  stops.push({ x: a.x + (b.x - a.x) * reach, y: a.y + (b.y - a.y) * reach });
+  const path = stops.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ");
   return (
-    <g
-      className="demo-packet"
-      style={vars({
-        "--x1": `${from.x}px`,
-        "--y1": `${from.y}px`,
-        "--x2": `${from.x + (to.x - from.x) * reach}px`,
-        "--y2": `${from.y + (to.y - from.y) * reach}px`,
-        "--dur": `${ms}ms`,
-      })}
-    >
+    <g className="demo-packet" style={{ offsetPath: `path("${path}")`, ...vars({ "--dur": `${ms}ms` }) }}>
       <PacketShape packet={packet} />
     </g>
   );
@@ -222,24 +221,31 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
   const slot = (i: number) => (W / count) * (i + 0.5);
   const boxW = Math.min(92, W / count - 12);
   const coordX = COORD.x + COORD.w / 2;
-  const coordBottom = COORD.y + COORD.h + 12;
   const down = frame.coordinator === "down";
   const failed = frame.coordinator === "failed";
   const coordinatorColor = down || failed ? RED : frame.coordinator === "done" ? GREEN : "currentColor";
+  const linkY = DB.y + DB.h / 2;
+  const dbX = DB.x + DB.w / 2;
+  const gateY = GATE.y + GATE.h / 2;
 
-  const point = (name: string, other: string): Point => {
-    if (name === DATABASE) {
-      return other === COORDINATOR ? { x: DB.x, y: DB.y + DB.h / 2 } : { x: DB.x + DB.w / 2, y: DB.y + DB.h };
-    }
-    if (name === COORDINATOR) {
-      return other === DATABASE ? { x: COORD.x + COORD.w, y: DB.y + DB.h / 2 } : { x: coordX, y: coordBottom };
-    }
-    return { x: slot(clients.indexOf(name)), y: CLIENT_TOP };
+  // Clients reach the database only through the gateway.
+  const route = ({ from, to }: Packet): Point[] => {
+    if (from === COORDINATOR) return [{ x: COORD.x + COORD.w, y: linkY }, { x: DB.x, y: linkY }];
+    if (to === COORDINATOR) return [{ x: DB.x, y: linkY }, { x: COORD.x + COORD.w, y: linkY }];
+    const client = slot(clients.indexOf(from === DATABASE || from === GATEWAY ? to : from));
+    const door = [{ x: client, y: CLIENT_TOP }, { x: client, y: gateY }];
+    const full = to === GATEWAY || from === GATEWAY ? door : [...door, { x: dbX, y: gateY }, { x: dbX, y: DB.y + DB.h }];
+    return from === DATABASE || from === GATEWAY ? full.toReversed() : full;
   };
-  const toDatabase = frame.packets.filter((p) => p.to === DATABASE && p.from !== COORDINATOR);
+  const touches = (node: string) => frame.packets.some((p) => p.from === node || p.to === node);
+  const linked = frame.packets.some((p) => p.from === COORDINATOR || p.to === COORDINATOR);
+  const database = frame.database || touches(DATABASE);
+  const gateway = frame.packets.some((p) => p.from !== COORDINATOR && p.to !== COORDINATOR);
+  const refused = frame.packets.some((p) => p.fate === "refused");
+  const gatewayColor = refused ? RED : gateway ? "var(--accent)" : "currentColor";
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="The coordinator, the database and the clients" className="w-full">
+    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="The clients reach the database through the gateway; the coordinator works from the database" className="w-full">
       {clients.map((c, i) => {
         const state = frame.clients[c];
         const quiet = state === "blocked" || state === "dropout" || state === "idle";
@@ -248,29 +254,41 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
             key={c}
             x1={slot(i)}
             y1={CLIENT_TOP}
-            x2={coordX}
-            y2={coordBottom}
+            x2={slot(i)}
+            y2={GATE.y + GATE.h}
             stroke={NODE_COLORS[state]}
             strokeWidth={state === "sent" ? 2.5 : 1.5}
             strokeDasharray={state === "sent" ? undefined : "4 5"}
-            opacity={down ? 0.25 : quiet ? 0.45 : 1}
+            opacity={quiet ? 0.45 : 1}
           />
         );
       })}
-      {toDatabase.map((p) => {
-        const a = point(p.from, DATABASE);
-        const b = point(DATABASE, p.from);
-        return <line key={p.from} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--accent)" strokeWidth={1.5} strokeDasharray="4 5" />;
-      })}
+      <line
+        x1={dbX}
+        y1={DB.y + DB.h}
+        x2={dbX}
+        y2={GATE.y}
+        stroke={database && gateway ? "var(--accent)" : "currentColor"}
+        strokeDasharray="3 3"
+        opacity={database && gateway ? 1 : 0.5}
+      />
       <line
         x1={COORD.x + COORD.w}
-        y1={DB.y + DB.h / 2}
+        y1={linkY}
         x2={DB.x}
-        y2={DB.y + DB.h / 2}
-        stroke={frame.database ? "var(--accent)" : "currentColor"}
+        y2={linkY}
+        stroke={linked || frame.database ? "var(--accent)" : "currentColor"}
         strokeDasharray="3 3"
-        opacity={frame.database ? 1 : 0.5}
+        opacity={linked || frame.database ? 1 : 0.5}
       />
+
+      <rect x={GATE.x} y={GATE.y} width={GATE.w} height={GATE.h} rx={8} fill="var(--background)" stroke={gatewayColor} strokeWidth={gateway ? 2 : 1.5} />
+      <text x={GATE.x + 12} y={gateY + 4.5} fontSize={13} fontWeight={650} fill="currentColor">
+        Gateway
+      </text>
+      <text x={GATE.x + 72} y={gateY + 4} fontSize={11} fill="currentColor" opacity={0.7}>
+        the clients&apos; only way in
+      </text>
 
       <g fill="currentColor">
         <text x={2} y={34} fontSize={20} fontWeight={650} className="tabular-nums">
@@ -339,13 +357,16 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
         height={DB.h}
         rx={6}
         fill="var(--background)"
-        stroke={frame.database ? "var(--accent)" : "currentColor"}
-        strokeWidth={frame.database ? 2 : 1}
-        strokeDasharray={frame.database ? undefined : "3 3"}
+        stroke={database ? "var(--accent)" : "currentColor"}
+        strokeWidth={database ? 2 : 1}
+        strokeDasharray={database ? undefined : "3 3"}
         className={frame.database ? "demo-pulse" : undefined}
       />
-      <text x={DB.x + DB.w / 2} y={DB.y + 27} textAnchor="middle" fontSize={12} fill="currentColor">
+      <text x={dbX} y={DB.y + 21} textAnchor="middle" fontSize={13} fontWeight={650} fill="currentColor">
         Database
+      </text>
+      <text x={dbX} y={DB.y + 37} textAnchor="middle" fontSize={11} fill="currentColor" opacity={0.7}>
+        and model files
       </text>
 
       {clients.map((c, i) => {
@@ -395,7 +416,7 @@ function Stage({ frame, clients, animate, ms, id }: { frame: Frame; clients: str
 
       {animate &&
         frame.packets.map((p, i) => (
-          <MovingPacket key={`${id}-${i}`} packet={p} from={point(p.from, p.to)} to={point(p.to, p.from)} ms={ms * 0.9} />
+          <MovingPacket key={`${id}-${i}`} packet={p} route={route(p)} ms={ms * 0.9} />
         ))}
     </svg>
   );
