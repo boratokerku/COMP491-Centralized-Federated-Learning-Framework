@@ -75,6 +75,8 @@ const COORDINATOR_LABEL: Record<CoordinatorState, string> = {
   failed: "round failed",
 };
 
+const PICK_TONES = [RED, AMBER, BLUE, "var(--mint)"];
+
 const vars = (values: Record<string, string>) => values as CSSProperties;
 
 function Curve({ demo, completed }: { demo: DemoRun; completed: number }) {
@@ -505,7 +507,7 @@ export function DemoPlayer({ demo }: { demo: DemoRun }) {
       <div className="space-y-2">
         <h2 className="text-sm font-medium text-muted">Watch the full run, or one failure on its own</h2>
         <div role="group" aria-label="What to watch" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-          {picks.map((p) => {
+          {picks.map((p, i) => {
             const active = p.id === scenarioId;
             return (
               <button
@@ -513,9 +515,10 @@ export function DemoPlayer({ demo }: { demo: DemoRun }) {
                 type="button"
                 aria-pressed={active}
                 onClick={() => watch(p.id)}
-                className={`rounded-lg border p-3 text-left text-sm ${active ? "border-accent bg-accent-soft" : "border-border hover:bg-surface"}`}
+                className="demo-pick rounded-lg border border-border p-3 text-left text-sm"
+                style={vars({ "--tone": PICK_TONES[i % PICK_TONES.length] })}
               >
-                <span className={`block font-semibold ${active ? "text-accent" : ""}`}>{p.title}</span>
+                <span className="demo-pick-title block font-semibold">{p.title}</span>
                 <span className="mt-1 hidden text-xs text-muted sm:block">{p.problem}</span>
               </button>
             );

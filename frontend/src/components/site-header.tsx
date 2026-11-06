@@ -32,8 +32,12 @@ export function SiteHeader() {
           <Link
             href="/login"
             prefetch={false}
-            className="ml-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-background hover:opacity-90"
+            className="login-button ml-1 inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-sm font-medium"
           >
+            <svg viewBox="0 0 16 16" aria-hidden className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.6}>
+              <rect x="3" y="7" width="10" height="7" rx="1.5" />
+              <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+            </svg>
             Admin login
           </Link>
         </nav>
