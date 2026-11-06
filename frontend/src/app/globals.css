@@ -85,6 +85,36 @@ summary:focus-visible {
   color: var(--hover);
 }
 
+/* Once the sliding pill is in place it takes over the background of the open tab. */
+nav[data-pill] .nav-hover[aria-current="page"] {
+  background: transparent;
+}
+
+.nav-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  border-radius: 0.375rem;
+  background: color-mix(in srgb, var(--pill) 15%, transparent);
+  transition:
+    transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 0.35s ease;
+}
+
+.page-enter {
+  animation: page-enter 0.4s ease-out backwards;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
 @media (hover: hover) {
   .nav-hover:hover {
     background: color-mix(in srgb, var(--hover) 15%, transparent);
@@ -353,6 +383,7 @@ summary:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .nav-pill,
   .lift-card,
   .round-step,
   .timeline::after,
@@ -362,6 +393,7 @@ summary:focus-visible {
     transition: none;
   }
 
+  .page-enter,
   .round-dot,
   .round-link::after,
   .timeline-bullet,

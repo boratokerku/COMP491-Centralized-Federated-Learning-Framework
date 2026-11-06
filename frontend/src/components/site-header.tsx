@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { REPO_URL, nav } from "@/content/site";
 import { NavLink } from "./nav-link";
+import { NavPill } from "./nav-pill";
 import { Logo } from "./ui";
 import githubLogo from "../../assets/github_logo.png";
 
@@ -13,7 +14,8 @@ export function SiteHeader() {
           <Logo />
           FedUp
         </Link>
-        <nav aria-label="Main" className="flex flex-wrap items-center gap-1">
+        <nav aria-label="Main" className="relative isolate flex flex-wrap items-center gap-1">
+          <NavPill />
           {nav.map((item) => (
             <NavLink key={item.href} href={item.href} exact={item.href === "/"} hover={item.hover}>
               {item.label}
