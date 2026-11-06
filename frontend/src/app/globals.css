@@ -58,6 +58,26 @@ summary:focus-visible {
   border-radius: 4px;
 }
 
+/* The typed title and intro on the home page. */
+.typing-rest {
+  visibility: hidden;
+}
+
+.typing-caret {
+  display: inline-block;
+  width: 2px;
+  height: 0.75em;
+  margin-right: -2px;
+  background: var(--accent);
+  animation: typing-blink 1s step-end infinite;
+}
+
+@keyframes typing-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
 /* The "how it works" replay. Only motion lives here, so without it every frame still reads. */
 .demo-packet {
   offset-rotate: 0deg;

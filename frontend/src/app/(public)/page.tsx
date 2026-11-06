@@ -1,3 +1,4 @@
+import { HeroTyping } from "@/components/hero-typing";
 import { ButtonLink, Card } from "@/components/ui";
 import { updates } from "@/content/site";
 
@@ -29,14 +30,10 @@ export default function Home() {
     <div className="space-y-16">
       <section className="space-y-6 pt-4">
         <p className="text-sm font-medium text-accent">COMP 491 capstone project by Team FedUp</p>
-        <h1 className="max-w-3xl text-4xl font-bold sm:text-5xl">
-          Train one model together, without sharing the data
-        </h1>
-        <p className="max-w-2xl text-lg text-muted">
-          A cross-silo federated learning framework: a central coordinator trains PyTorch models
-          across independently operated clients, such as banks or telecom providers, without
-          collecting their raw data.
-        </p>
+        <HeroTyping
+          title="Train one model together, without sharing the data"
+          text="A cross-silo federated learning framework: a central coordinator trains PyTorch models across independently operated clients, such as banks or telecom providers, without collecting their raw data."
+        />
         <div className="flex flex-wrap gap-3">
           <ButtonLink href="/demo">See how it works</ButtonLink>
           <ButtonLink href="/docs" variant="secondary">
