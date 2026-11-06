@@ -14,6 +14,7 @@
   --warning: #ffbf00;
   --warning-soft: #251e03;
   --mint: #98fb98;
+  --lilac: #c8a2c8;
 }
 
 @theme inline {
@@ -75,6 +76,19 @@ summary:focus-visible {
 @keyframes typing-blink {
   50% {
     opacity: 0;
+  }
+}
+
+/* The top menu: every tab has its own colour, on hover and while its page is open. */
+.nav-hover[aria-current="page"] {
+  background: color-mix(in srgb, var(--hover) 15%, transparent);
+  color: var(--hover);
+}
+
+@media (hover: hover) {
+  .nav-hover:hover {
+    background: color-mix(in srgb, var(--hover) 15%, transparent);
+    color: var(--hover);
   }
 }
 
@@ -166,7 +180,100 @@ summary:focus-visible {
   }
 }
 
+/* Home page progress. Everything stays visible until the script has marked the list ready. */
+.timeline {
+  position: relative;
+  isolation: isolate;
+}
+
+.timeline::before,
+.timeline::after {
+  content: "";
+  position: absolute;
+  top: 24px;
+  left: 15px;
+  width: 2px;
+}
+
+.timeline::before {
+  height: var(--rail, 0);
+  background: var(--border);
+}
+
+.timeline::after {
+  height: var(--fill, 0);
+  background-image: var(--rail-colors);
+  background-size: 100% var(--rail, 100%);
+  transition: height 0.15s linear;
+}
+
+/* Solid and above the line, so the line never crosses a label. */
+.timeline-dot {
+  z-index: 1;
+  transition:
+    background-color 0.35s ease,
+    color 0.35s ease,
+    transform 0.35s ease;
+}
+
+.timeline-body {
+  transition: opacity 0.35s ease;
+}
+
+.timeline[data-ready] > li:not([data-lit]) .timeline-dot {
+  background-color: var(--surface);
+  color: var(--muted);
+  transform: scale(0.85);
+}
+
+.timeline[data-ready] > li:not([data-lit]) .timeline-body {
+  opacity: 0.35;
+}
+
+.timeline > li[data-lit] .timeline-bullet {
+  animation: timeline-in 0.4s ease-out both;
+  animation-delay: calc(var(--n) * 80ms);
+}
+
+.timeline-latest[data-lit] .timeline-dot {
+  animation: timeline-pulse 2s ease-out infinite;
+}
+
+.timeline-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+}
+
+.timeline-panel[data-open] {
+  grid-template-rows: 1fr;
+}
+
+@keyframes timeline-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes timeline-pulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 60%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 14px transparent;
+  }
+}
+
 /* The "how it works" replay. Only motion lives here, so without it every frame still reads. */
+.demo-scrub-fill {
+  background: linear-gradient(90deg, var(--danger), var(--warning), var(--mint), var(--accent));
+}
+
+.demo-scrub-thumb {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
 .demo-packet {
   offset-rotate: 0deg;
   animation: demo-move var(--dur) ease-in-out both;
@@ -247,12 +354,18 @@ summary:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .lift-card,
-  .round-step {
+  .round-step,
+  .timeline::after,
+  .timeline-dot,
+  .timeline-body,
+  .timeline-panel {
     transition: none;
   }
 
   .round-dot,
   .round-link::after,
+  .timeline-bullet,
+  .timeline-latest[data-lit] .timeline-dot,
   .demo-pulse,
   .demo-pop,
   .demo-fade,

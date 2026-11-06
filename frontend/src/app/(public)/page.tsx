@@ -1,6 +1,7 @@
 import { FederatedBackground } from "@/components/federated-background";
 import { HeroTyping } from "@/components/hero-typing";
 import type { CSSProperties } from "react";
+import { ProgressTimeline } from "@/components/progress-timeline";
 import { ButtonLink, Card } from "@/components/ui";
 import { updates } from "@/content/site";
 
@@ -30,7 +31,6 @@ const steps = [
 ];
 
 export default function Home() {
-  const [latest, ...earlier] = updates;
   return (
     <div className="space-y-16">
       <section className="relative isolate space-y-6 pt-4">
@@ -90,38 +90,7 @@ export default function Home() {
 
       <section className="space-y-4">
         <h2 className="text-2xl font-semibold">Progress</h2>
-        <Card>
-          <div className="flex items-baseline justify-between gap-3">
-            <h3 className="font-semibold">Latest: {latest.week}</h3>
-            <span className="text-sm text-muted">{latest.date}</span>
-          </div>
-          <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm">
-            {latest.items.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </Card>
-        {earlier.length > 0 && (
-          <details className="rounded-xl border border-border">
-            <summary className="cursor-pointer px-5 py-3 text-sm font-medium">
-              Earlier weeks ({earlier.length})
-            </summary>
-            <div className="space-y-5 border-t border-border p-5">
-              {earlier.map((u) => (
-                <article key={u.week}>
-                  <h3 className="text-sm font-semibold">
-                    {u.week} <span className="font-normal text-muted">({u.date})</span>
-                  </h3>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted">
-                    {u.items.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </article>
-              ))}
-            </div>
-          </details>
-        )}
+        <ProgressTimeline updates={updates} />
       </section>
     </div>
   );
