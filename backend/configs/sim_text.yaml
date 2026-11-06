@@ -26,4 +26,4 @@ client:
   local_epochs: 1
   batch_size: 64
   learning_rate: 0.01
-  class_weights: [1.0, 6.9] # ~ ham / spam after de-duplication (12.6% spam); fixed for all clients
+  class_weights: [1.0, 5.0] # provisional candidate from the 3-seed SMS tuning screen
