@@ -16,11 +16,11 @@ const stolzl = localFont({
 
 export const metadata: Metadata = {
   title: {
-    default: "Centralized Federated Learning Framework",
-    template: "%s | CFL Framework",
+    default: "FedUp: Centralized Federated Learning Framework",
+    template: "%s | FedUp",
   },
   description:
-    "A cross-silo federated learning framework with conformance checking, fault tolerance and observability. COMP 491 capstone, Koç University.",
+    "A cross-silo federated learning framework with conformance checking, fault tolerance and observability. COMP 491 capstone by Team FedUp, Koç University.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

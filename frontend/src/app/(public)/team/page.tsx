@@ -14,8 +14,8 @@ export default function Team() {
   return (
     <div className="space-y-10">
       <PageHeader
-        title="Team"
-        description="A COMP 491 capstone project at Koç University."
+        title="Team FedUp"
+        description="We are FedUp, the team behind this COMP 491 capstone project at Koç University."
       >
         <a href={REPO_URL} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-surface">
           Source code on GitHub &rarr;

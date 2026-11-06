@@ -28,7 +28,7 @@ export default function Home() {
   return (
     <div className="space-y-16">
       <section className="space-y-6 pt-4">
-        <p className="text-sm font-medium text-accent">COMP 491 capstone project</p>
+        <p className="text-sm font-medium text-accent">COMP 491 capstone project by Team FedUp</p>
         <h1 className="max-w-3xl text-4xl font-bold sm:text-5xl">
           Train one model together, without sharing the data
         </h1>
