@@ -6,7 +6,7 @@ export const nav = [
   { href: "/demo", label: "How it works", hover: "var(--warning)" },
   { href: "/docs", label: "Documentation", hover: "var(--mint)" },
   { href: "/results", label: "Results", hover: "var(--accent)" },
-  { href: "/team", label: "Team FedUp and Advisors", hover: "var(--lilac)" },
+  { href: "/team", label: "Team", hover: "var(--lilac)" },
 ];
 
 export const team = [

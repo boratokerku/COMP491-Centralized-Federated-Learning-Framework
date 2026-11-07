@@ -39,6 +39,25 @@ html {
   scrollbar-gutter: stable;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* The page width: wide screens are used in full, with a cap so lines stay readable. */
+.wrap {
+  margin-inline: auto;
+  max-width: 1600px;
+  padding-inline: 1.5rem;
+}
+
+@media (min-width: 64rem) {
+  .wrap {
+    padding-inline: 3rem;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -62,26 +81,6 @@ summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
-}
-
-/* The typed title and intro on the home page. */
-.typing-rest {
-  visibility: hidden;
-}
-
-.typing-caret {
-  display: inline-block;
-  width: 2px;
-  height: 0.75em;
-  margin-right: -2px;
-  background: var(--accent);
-  animation: typing-blink 1s step-end infinite;
-}
-
-@keyframes typing-blink {
-  50% {
-    opacity: 0;
-  }
 }
 
 /* The top menu: every tab has its own colour, on hover and while its page is open. */
@@ -443,6 +442,251 @@ nav[data-pill] a[aria-current="page"].border-accent {
   }
 }
 
+
+/* Landing screen. */
+.hero-glow {
+  position: absolute;
+  z-index: -20;
+  top: -4rem;
+  bottom: 0;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 45% 55% at 74% 48%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
+    radial-gradient(ellipse 30% 35% at 62% 30%, color-mix(in srgb, var(--danger) 14%, transparent), transparent 70%),
+    radial-gradient(ellipse 30% 35% at 86% 70%, color-mix(in srgb, var(--mint) 12%, transparent), transparent 70%);
+}
+
+.hero-title {
+  font-size: clamp(4.5rem, 14vw, 12.5rem);
+  font-weight: 700;
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+}
+
+.hero-title-up {
+  background: linear-gradient(100deg, var(--danger), var(--warning) 35%, var(--mint) 65%, var(--accent));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: hero-shine 8s ease-in-out infinite alternate;
+}
+
+@keyframes hero-shine {
+  to {
+    background-position: 100% 0;
+  }
+}
+
+.hero-in {
+  animation: hero-in 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+
+.hero-in-late {
+  animation-delay: 0.2s;
+}
+
+@keyframes hero-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+/* A pill with a round knob, like a switch: the knob slides on hover. */
+.enter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  height: 3.25rem;
+  padding: 0.3rem 0.3rem 0.3rem 1.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(90deg, var(--danger), var(--warning), var(--mint), var(--accent)) border-box;
+  font-weight: 500;
+  transition: box-shadow 0.25s ease;
+}
+
+.enter-pill-knob {
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 999px;
+  background: var(--foreground);
+  color: var(--background);
+  transition: transform 0.25s ease;
+}
+
+@media (hover: hover) {
+  .enter-pill:hover {
+    box-shadow: 0 0 28px -6px var(--accent);
+  }
+
+  .enter-pill:hover .enter-pill-knob {
+    transform: translateX(4px) rotate(90deg);
+  }
+}
+
+.scroll-ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 5.5rem;
+  height: 5.5rem;
+  color: var(--foreground);
+}
+
+.scroll-ring-text {
+  position: absolute;
+  inset: 0;
+  animation: spin 18s linear infinite;
+}
+
+/* One letter per span, each turned around the centre of the ring. */
+.scroll-ring-text > span {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1ch;
+  height: 50%;
+  margin-left: -0.5ch;
+  transform-origin: bottom center;
+  text-align: center;
+  font-size: 8px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--muted);
+}
+
+/* The intro on the landing screen, typed letter by letter. */
+.typed-rest {
+  visibility: hidden;
+}
+
+.typed-fresh {
+  animation: typed-fresh 0.35s ease-out backwards;
+}
+
+@keyframes typed-fresh {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+
+.typing-caret {
+  display: inline-block;
+  width: 2px;
+  height: 0.95em;
+  margin: 0 -2px -0.12em 0;
+  background: var(--accent);
+  animation: typing-blink 1s step-end infinite;
+}
+
+@keyframes typing-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Section headings: a large outlined word behind the title. */
+.outline-word {
+  position: absolute;
+  z-index: -1;
+  top: -0.05em;
+  right: 0;
+  font-size: clamp(4rem, 13vw, 11rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  color: transparent;
+  -webkit-text-stroke: 1px color-mix(in srgb, var(--foreground) 14%, transparent);
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+
+/* Phone and tablet menu: three bars that turn into a cross, and a panel that slides open. */
+.menu-icon {
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 12px;
+}
+
+.menu-icon > span {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--foreground);
+  transition:
+    transform 0.3s ease,
+    opacity 0.2s ease,
+    top 0.3s ease;
+}
+
+.menu-icon > span:nth-child(1) {
+  top: 0;
+}
+
+.menu-icon > span:nth-child(2) {
+  top: 5px;
+}
+
+.menu-icon > span:nth-child(3) {
+  top: 10px;
+}
+
+.menu-icon[data-open] > span:nth-child(1) {
+  top: 5px;
+  transform: rotate(45deg);
+}
+
+.menu-icon[data-open] > span:nth-child(2) {
+  opacity: 0;
+}
+
+.menu-icon[data-open] > span:nth-child(3) {
+  top: 5px;
+  transform: rotate(-45deg);
+}
+
+.mobile-menu {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0s linear 0.35s;
+}
+
+.mobile-menu[data-open] {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition: grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mobile-menu[data-open] .mobile-menu-item {
+  animation: hero-in 0.4s ease-out backwards;
+  animation-delay: calc(var(--n) * 45ms + 80ms);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .login-button,
   .nav-pill,
@@ -452,7 +696,10 @@ nav[data-pill] a[aria-current="page"].border-accent {
   .timeline::after,
   .timeline-dot,
   .timeline-body,
-  .timeline-panel {
+  .timeline-panel,
+  .menu-icon > span,
+  .mobile-menu,
+  .mobile-menu[data-open] {
     transition: none;
   }
 
@@ -464,7 +711,13 @@ nav[data-pill] a[aria-current="page"].border-accent {
   .demo-pulse,
   .demo-pop,
   .demo-fade,
-  .demo-draw {
+  .demo-draw,
+  .hero-title-up,
+  .hero-in,
+  .scroll-ring-text,
+  .typed-fresh,
+  .mobile-menu[data-open] .mobile-menu-item {
     animation: none;
   }
+
 }

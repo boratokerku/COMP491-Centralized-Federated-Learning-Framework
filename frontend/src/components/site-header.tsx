@@ -1,20 +1,19 @@
-import Image from "next/image";
 import Link from "next/link";
 import { REPO_URL, nav } from "@/content/site";
+import { MobileMenu } from "./mobile-menu";
 import { NavLink } from "./nav-link";
 import { NavPill } from "./nav-pill";
-import { Logo } from "./ui";
-import githubLogo from "../../assets/github_logo.png";
+import { GitHubIcon, Logo } from "./ui";
 
 export function SiteHeader() {
   return (
-    <header className="top-0 z-10 border-b md:sticky border-border bg-background/90 backdrop-blur">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
+    <header className="sticky top-0 z-20 border-b border-border bg-background/90 backdrop-blur">
+      <div className="wrap flex items-center justify-between gap-x-6 py-3">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <Logo />
           FedUp
         </Link>
-        <nav aria-label="Main" className="relative isolate flex flex-wrap items-center gap-1">
+        <nav aria-label="Main" className="relative isolate hidden items-center gap-1 lg:flex">
           <NavPill />
           {nav.map((item) => (
             <NavLink key={item.href} href={item.href} exact={item.href === "/"} hover={item.hover}>
@@ -24,9 +23,10 @@ export function SiteHeader() {
           <a
             href={REPO_URL}
             aria-label="GitHub"
-            className="ml-1 rounded-md bg-white px-1 transition-opacity hover:opacity-90"
+            className="ml-1 inline-flex h-8 items-center gap-1.5 rounded-md bg-foreground px-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
           >
-            <Image src={githubLogo} alt="" className="h-8 w-auto" />
+            <GitHubIcon className="h-4 w-4" />
+            GitHub
           </a>
           {/* A signed-in visitor is sent on to /app by the login page. */}
           <Link
@@ -41,6 +41,7 @@ export function SiteHeader() {
             Admin login
           </Link>
         </nav>
+        <MobileMenu />
       </div>
     </header>
   );
