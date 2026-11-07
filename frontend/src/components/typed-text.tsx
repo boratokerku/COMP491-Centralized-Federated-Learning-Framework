@@ -33,7 +33,7 @@ export function TypedText({ parts, className }: { parts: Part[]; className?: str
 
   const starts = parts.map((_, i) => parts.slice(0, i).reduce((sum, p) => sum + p.text.length, 0));
   return (
-    <p className={className}>
+    <p className={`select-none cursor-default ${className ?? ""}`}>
       <noscript>
         <style>{".typed-rest { visibility: visible; }"}</style>
       </noscript>
@@ -41,11 +41,8 @@ export function TypedText({ parts, className }: { parts: Part[]; className?: str
       <span aria-hidden>
         {parts.map((part, i) => {
           const from = starts[i];
-          const offset = from + part.text.length;
           const shown = Math.max(0, Math.min(part.text.length, count - from));
           const settled = Math.max(0, shown - FRESH);
-          // The caret sits where the next letter goes, and stays blinking at the very end.
-          const typing = (count > from || i === 0) && count <= offset;
           return (
             <span key={i} className={part.className}>
               {part.text.slice(0, settled)}
@@ -54,7 +51,6 @@ export function TypedText({ parts, className }: { parts: Part[]; className?: str
                   {ch}
                 </span>
               ))}
-              {typing && <span className="typing-caret" />}
               <span className="typed-rest">{part.text.slice(shown)}</span>
             </span>
           );

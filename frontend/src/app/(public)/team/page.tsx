@@ -26,18 +26,9 @@ const initials = (name: string) =>
     .map((p) => p[0])
     .join("");
 
-function Avatar({
-  name,
-  size = "md",
-}: {
-  name: string;
-  size?: "md" | "lg";
-}) {
+function Avatar({ name }: { name: string }) {
   const photo = PHOTOS[name];
-  const dims =
-    size === "lg"
-      ? "h-36 w-36 sm:h-44 sm:w-44"
-      : "h-32 w-32 sm:h-36 sm:w-36";
+  const dims = "h-36 w-36 sm:h-44 sm:w-44 lg:h-48 lg:w-48";
   if (!photo) {
     return (
       <span
@@ -55,7 +46,7 @@ function Avatar({
         src={photo.src}
         alt={name}
         fill
-        sizes={size === "lg" ? "176px" : "144px"}
+        sizes="192px"
         className={photo.className ?? "object-cover"}
       />
     </span>
@@ -77,11 +68,11 @@ export default function Team() {
         </a>
       </PageHeader>
 
-      <Card className="space-y-8 p-6 sm:p-8">
+      <Card className="space-y-8 p-8 sm:p-10">
         <div className="flex items-center gap-3">
           <span
             aria-hidden
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-border bg-accent-soft text-accent"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-border bg-accent-soft text-accent"
           >
             <svg
               viewBox="0 0 24 24"
@@ -97,23 +88,28 @@ export default function Team() {
               <path d="M22 10v6" />
             </svg>
           </span>
-          <h2 className="text-xl font-semibold sm:text-2xl">Project Advisors</h2>
+          <h2 className="text-2xl font-semibold sm:text-3xl">Project Advisors</h2>
         </div>
-        <ul className="grid gap-8 sm:grid-cols-2 sm:gap-x-10">
+        <ul className="grid gap-10 sm:grid-cols-2 lg:gap-x-16">
           {advisors.map((a) => (
-            <li key={a} className="flex items-center gap-5 sm:gap-6">
-              <Avatar name={a} size="md" />
-              <span className="text-lg font-semibold sm:text-xl">{a}</span>
+            <li key={a} className="flex items-center gap-6 sm:gap-8">
+              <Avatar name={a} />
+              <div className="space-y-1.5">
+                <span className="block text-xl font-semibold sm:text-2xl">{a}</span>
+                <span className="block text-sm text-muted sm:text-base">
+                  Computer Engineering · Koç University
+                </span>
+              </div>
             </li>
           ))}
         </ul>
       </Card>
 
-      <Card className="space-y-8 p-6 sm:p-8">
+      <Card className="space-y-8 p-8 sm:p-10">
         <div className="flex items-center gap-3">
           <span
             aria-hidden
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-border bg-background text-mint"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-border bg-background text-mint"
           >
             <svg
               viewBox="0 0 24 24"
@@ -130,21 +126,21 @@ export default function Team() {
               <path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
           </span>
-          <h2 className="text-xl font-semibold sm:text-2xl">Team Members</h2>
+          <h2 className="text-2xl font-semibold sm:text-3xl">Team Members</h2>
         </div>
-        <div className="grid gap-8 sm:grid-cols-2 sm:gap-x-10 sm:gap-y-10">
+        <div className="grid gap-10 sm:grid-cols-2 lg:gap-x-16 lg:gap-y-12">
           {team.map((m) => (
-            <div key={m.name} className="flex items-center gap-5 sm:gap-6">
-              <Avatar name={m.name} size="md" />
-              <div className="min-w-0 space-y-1.5">
-                <h3 className="text-lg font-semibold sm:text-xl">{m.name}</h3>
+            <div key={m.name} className="flex items-center gap-6 sm:gap-8">
+              <Avatar name={m.name} />
+              <div className="min-w-0 space-y-2">
+                <h3 className="text-xl font-semibold sm:text-2xl">{m.name}</h3>
                 <a
                   href={`mailto:${m.email}`}
-                  className="inline-block text-sm text-foreground/90 underline underline-offset-4 transition-colors hover:text-accent sm:text-base"
+                  className="inline-block text-base text-foreground/90 underline underline-offset-4 transition-colors hover:text-accent sm:text-lg"
                 >
                   {m.email}
                 </a>
-                <p className="text-sm leading-relaxed text-muted">{m.role}</p>
+                <p className="text-sm leading-relaxed text-muted sm:text-base">{m.role}</p>
               </div>
             </div>
           ))}

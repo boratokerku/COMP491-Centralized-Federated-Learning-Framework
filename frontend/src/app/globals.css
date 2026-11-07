@@ -48,13 +48,13 @@ html {
 /* The page width: wide screens are used in full, with a cap so lines stay readable. */
 .wrap {
   margin-inline: auto;
-  max-width: 1600px;
-  padding-inline: 1.5rem;
+  max-width: 1920px;
+  padding-inline: 1.25rem;
 }
 
 @media (min-width: 64rem) {
   .wrap {
-    padding-inline: 3rem;
+    padding-inline: 2rem;
   }
 }
 
