@@ -1,5 +1,4 @@
-
-import Link from "next/link"; 
+import Link from "next/link";
 import { logout } from "@/app/login/actions";
 import { NavLink } from "@/components/nav-link";
 import { NavPill } from "@/components/nav-pill";
