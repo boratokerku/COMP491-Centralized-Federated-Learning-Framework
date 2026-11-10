@@ -37,6 +37,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker
 import pandas as pd
 import torch
 
@@ -239,11 +240,22 @@ def _write(out: Path, task: str, runs: dict[str, list[dict]], settings: dict) ->
         for case, results in runs.items()
     }
     curve_data = {case: curves for case, curves in curve_data.items() if curves}
+    # Centralized and local-only have no rounds: draw their held-out F1 as horizontal lines.
+    # local_only_client_test is on the clients' own test splits, so it does not belong here.
+    reference = {
+        case: statistics.mean(r["final"]["f1"] for r in results)
+        for case, results in runs.items()
+        if case in ("centralized", "local_only")
+    }
     if curve_data:
         fig, ax = plt.subplots(figsize=(8, 4.5))
         for case, curves in curve_data.items():
             mean = [statistics.mean(v) for v in zip(*curves, strict=True)]
             ax.plot(range(1, len(mean) + 1), mean, label=case)
+        for case, value in reference.items():
+            ax.axhline(value, color="black", linestyle="--" if case == "centralized" else ":")
+            ax.annotate(case, (1, value), fontsize=7, va="bottom")
+        ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
         ax.set(
             xlabel="Round", ylabel="Global F1 (held-out test set)", title=f"{task}: F1 per round"
         )
@@ -259,7 +271,9 @@ def main() -> int:
     parser.add_argument("--tasks", nargs="+", default=["tabular", "text"])
     parser.add_argument("--seeds", nargs="+", type=int, default=[42, 43, 44])
     parser.add_argument("--rounds", type=int, default=None, help="override rounds.num_rounds")
-    parser.add_argument("--mus", nargs="+", type=float, default=[0.01, 0.1], help="FedProx mu")
+    parser.add_argument(
+        "--mus", nargs="+", type=float, default=[0.001, 0.01, 0.1], help="FedProx mu"
+    )
     parser.add_argument("--alpha", type=float, default=0.3, help="Dirichlet alpha of label skew")
     parser.add_argument(
         "--baselines-only",
