@@ -151,6 +151,30 @@ setting has three seeds. Treat differences below about 0.01 F1 as noise. The gri
 coarse screen, not an exhaustive search (no weight decay, dropout, FedProx mu or more than two
 local epochs).
 
+### Tabular training baselines
+
+Reproduce with `python backend/scripts/baselines_tabular.py` (about 30 seconds). Two baselines
+use the tuned settings of `sim_tabular.yaml` and `BankTaskSpec`, with seeds 42, 43 and 44:
+**centralized** trains one model on all four clients' training splits together, and
+**local only** trains one model per client on that client's training split alone. Both train
+for `num_rounds x local_epochs` = 20 epochs, so every row is seen as often as in a federated
+run. Files (same layout as the text baselines): `results/tabular_baselines/tabular/results.json`,
+`summary.csv`, `report.md`.
+
+| Baseline | F1 | ROC-AUC | PR-AUC | Accuracy | Worst client F1 |
+|---|---:|---:|---:|---:|---:|
+| Centralized (held-out test) | 0.507 ± 0.006 | 0.797 ± 0.003 | 0.466 ± 0.007 | 0.865 ± 0.002 | n/a |
+| Local only (held-out test, mean of 4 clients) | 0.446 ± 0.014 | 0.769 ± 0.007 | 0.410 ± 0.009 | 0.844 ± 0.009 | 0.422 |
+| Local only (own client test, mean of 4 clients) | 0.431 ± 0.016 | 0.751 ± 0.005 | 0.383 ± 0.009 | 0.836 ± 0.012 | 0.402 |
+
+Reading the table: pooling the data gives the best baseline, and a client that trains alone
+loses about 0.06 F1 and 0.03 ROC-AUC against it. The held-out rows can be compared across
+methods (including the federated runs); the "own client test" row shows each model on its own
+client's distribution only and must not be pooled with the held-out rows. A client's test
+split holds about 186 "yes" rows, so per-client numbers are noisy. The 20-epoch centralized
+and local models start to overfit, which is why the federated model (final held-out F1 0.52,
+ROC-AUC 0.81, see the tuning table above) is not below the centralized baseline here.
+
 ## Text dataset: UCI SMS Spam Collection
 
 | Field | Value |
