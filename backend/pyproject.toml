@@ -33,7 +33,7 @@ cfl-client = "cfl.client.__main__:main"
 cfl-report = "cfl.reporting.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.4", "jsonschema>=4.21"]
+dev = ["pytest>=8.0", "ruff>=0.4", "jsonschema>=4.21", "requests>=2.31"]  # requests: independent-client tests
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cfl"]
