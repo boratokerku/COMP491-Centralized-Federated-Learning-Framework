@@ -125,27 +125,59 @@ def _baselines(config: RunConfig, task: TaskDefinition, seed: int) -> dict[str, 
     pooled = (torch.cat([s[0] for s in splits]), torch.cat([s[1] for s in splits]))
     centralized = evaluate(_train_alone(config, task, *pooled, seed), *test)
 
-    alone = [evaluate(_train_alone(config, task, *s, seed), *test) for s in splits]
-    local = {k: statistics.mean(a[k] for a in alone) for k in METRICS if k in alone[0]}
+    alone = []
+    for i, split in enumerate(splits):
+        model = _train_alone(config, task, *split, seed)
+        own_test = task.load_split(root / f"client_{i}" / "test.csv")
+        alone.append(
+            {
+                "held_out_test": evaluate(model, *test),
+                "client_test": evaluate(model, *own_test),
+            }
+        )
+    held_out = [result["held_out_test"] for result in alone]
+    client_test = [result["client_test"] for result in alone]
     return {
         "centralized": {"final": centralized},
         "local_only": {
-            "final": local,
-            "worst_client_f1": min(a["f1"] for a in alone),
-            "best_client_f1": max(a["f1"] for a in alone),
+            "final": {
+                k: statistics.mean(a[k] for a in held_out) for k in METRICS if k in held_out[0]
+            },
+            "worst_client_f1": min(a["f1"] for a in held_out),
+            "best_client_f1": max(a["f1"] for a in held_out),
+        },
+        "local_only_client_test": {
+            "final": {
+                k: statistics.mean(a[k] for a in client_test)
+                for k in METRICS
+                if k in client_test[0]
+            },
+            "worst_client_f1": min(a["f1"] for a in client_test),
+            "best_client_f1": max(a["f1"] for a in client_test),
+            "per_client": {
+                f"client_{i}": result["client_test"] for i, result in enumerate(alone)
+            },
         },
     }
 
 
-def compare(task_name: str, seeds: list[int], rounds: int | None, mus: list[float], alpha: float):
+def compare(
+    task_name: str,
+    seeds: list[int],
+    rounds: int | None,
+    mus: list[float],
+    alpha: float,
+    baselines_only: bool = False,
+):
     config = load_run_config(CONFIGS / f"sim_{task_name}.yaml")
     if rounds is not None:
         config = _override(config, rounds={"num_rounds": rounds})
     task = get_task(task_name)
-    skewed = _make_label_skew(config, task, alpha)
+    skewed = None if baselines_only else _make_label_skew(config, task, alpha)
 
-    strategies = [("fedavg", {"name": "fedavg", "mu": None})]
-    strategies += [(f"fedprox_mu{mu}", {"name": "fedprox", "mu": mu}) for mu in mus]
+    strategies = [] if baselines_only else [("fedavg", {"name": "fedavg", "mu": None})]
+    if not baselines_only:
+        strategies += [(f"fedprox_mu{mu}", {"name": "fedprox", "mu": mu}) for mu in mus]
     runs: dict[str, list[dict]] = defaultdict(list)
     for seed in seeds:
         for name, strategy in strategies:
@@ -202,16 +234,24 @@ def _write(out: Path, task: str, runs: dict[str, list[dict]], settings: dict) ->
         lines.append(f"| `{r['case']}` | {values} |")
     (out / "report.md").write_text("\n".join(lines) + "\n")
 
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    for case, results in runs.items():
-        curves = [[x["f1"] for x in r["rounds"]] for r in results if "rounds" in r]
-        if curves:
+    curve_data = {
+        case: [[x["f1"] for x in r["rounds"]] for r in results if "rounds" in r]
+        for case, results in runs.items()
+    }
+    curve_data = {case: curves for case, curves in curve_data.items() if curves}
+    if curve_data:
+        fig, ax = plt.subplots(figsize=(8, 4.5))
+        for case, curves in curve_data.items():
             mean = [statistics.mean(v) for v in zip(*curves, strict=True)]
             ax.plot(range(1, len(mean) + 1), mean, label=case)
-    ax.set(xlabel="Round", ylabel="Global F1 (held-out test set)", title=f"{task}: F1 per round")
-    ax.legend(fontsize=7)
-    fig.savefig(out / "curves.png", dpi=130, bbox_inches="tight")
-    plt.close(fig)
+        ax.set(
+            xlabel="Round", ylabel="Global F1 (held-out test set)", title=f"{task}: F1 per round"
+        )
+        ax.legend(fontsize=7)
+        fig.savefig(out / "curves.png", dpi=130, bbox_inches="tight")
+        plt.close(fig)
+    else:
+        (out / "curves.png").unlink(missing_ok=True)
 
 
 def main() -> int:
@@ -221,17 +261,20 @@ def main() -> int:
     parser.add_argument("--rounds", type=int, default=None, help="override rounds.num_rounds")
     parser.add_argument("--mus", nargs="+", type=float, default=[0.01, 0.1], help="FedProx mu")
     parser.add_argument("--alpha", type=float, default=0.3, help="Dirichlet alpha of label skew")
+    parser.add_argument(
+        "--baselines-only",
+        action="store_true",
+        help="run only centralized and local-only baselines (skip federated comparisons)",
+    )
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "results" / "comparison")
     args = parser.parse_args()
 
     for task in args.tasks:
-        settings = {
-            "seeds": args.seeds,
-            "rounds": args.rounds,
-            "mus": args.mus,
-            "alpha": args.alpha,
-        }
-        runs = compare(task, args.seeds, args.rounds, args.mus, args.alpha)
+        settings = {"seeds": args.seeds, "rounds": args.rounds}
+        if not args.baselines_only:
+            settings.update({"mus": args.mus, "alpha": args.alpha})
+        settings["baselines_only"] = args.baselines_only
+        runs = compare(task, args.seeds, args.rounds, args.mus, args.alpha, args.baselines_only)
         _write(args.out / task, task, runs, settings)
         print((args.out / task / "report.md").read_text())
     return 0
