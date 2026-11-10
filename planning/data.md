@@ -155,3 +155,19 @@ each setting has only three seeds and all runs reuse one fixed partition. Becaus
 metrics use the held-out test set, the comparison should not be treated as an unbiased final
 test after selecting a setting. Re-evaluate the selected configuration on a fresh test set
 or use validation metrics for future tuning; report the test-set reuse as a limitation.
+
+### SMS training baselines
+
+Run just the baselines, without repeating the federated runs, from the repository root with
+`python backend/scripts/run_comparison.py --tasks text --baselines-only --out results/text_baselines`.
+The shared comparison runner reports two local-training baselines against the server's
+held-out test set: one centralized model trained
+on the concatenated client training splits, and one local model per client trained only on that
+client's training split. It also evaluates each local model on that same client's private test
+split. The `local_only_client_test` case in `results/text_baselines/text/results.json` contains
+the mean metrics across clients plus each client's individual metrics; the report and CSV include the mean,
+standard deviation across seeds, and worst/best client F1. The two local-only test
+views answer different questions: held-out test scores are directly comparable across methods,
+while client-test scores show performance on each client's own distribution. Client test scores
+must not be pooled with the server held-out scores or interpreted as an additional independent
+test set.
