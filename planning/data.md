@@ -171,9 +171,10 @@ Reading the table: pooling the data gives the best baseline, and a client that t
 loses about 0.06 F1 and 0.03 ROC-AUC against it. The held-out rows can be compared across
 methods (including the federated runs); the "own client test" row shows each model on its own
 client's distribution only and must not be pooled with the held-out rows. A client's test
-split holds about 186 "yes" rows, so per-client numbers are noisy. The 20-epoch centralized
-and local models start to overfit, which is why the federated model (final held-out F1 0.52,
-ROC-AUC 0.81, see the tuning table above) is not below the centralized baseline here.
+split holds about 186 "yes" rows, so per-client numbers are noisy. The baselines reuse the
+federated hyperparameters and were not tuned separately, so the federated model (final
+held-out F1 0.52, ROC-AUC 0.81, see the tuning table above) is not below the centralized
+baseline here; do not read that as federation beating pooled training.
 
 ## Text dataset: UCI SMS Spam Collection
 
