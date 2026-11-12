@@ -90,6 +90,134 @@ Reproduce with: `python backend/scripts/partition_tabular.py --num-clients 4 --s
 
 A non-IID partition (label/feature skew) is optional (T7.2) and will be added later.
 
+### Federated hyperparameter tuning (tabular)
+
+Reproduce with `python backend/scripts/tune_tabular.py` (about 5 minutes on 6 workers). The
+grid is the product of learning rate {0.001, 0.003, 0.01}, local epochs {1, 2}, batch size
+{32, 64} and class weights {[1, 3], [1, 5], [1, 7.9]}: 36 settings, each run with seeds 42, 43
+and 44 for 20 FedAvg rounds on the seed-42 IID partitions (108 runs). All 108 runs completed
+and all four clients verified every final model. Because only 11.3% of the rows are "yes",
+accuracy is not used; the metrics are F1, ROC-AUC and PR-AUC of the final global model on the
+server's held-out test set. "Rounds to converge" is the first round after which every later
+global F1 stays within 0.005 of the final F1 (20 means it was still moving at the end). Per
+run and per setting records: `results/tabular_tuning/runs.csv`, `summary.csv`, `results.json`
+(they also hold the mean client validation F1 and PR-AUC after local training, which agree
+with the held-out ranking).
+
+Effect of each hyperparameter, averaged over the other three (36 settings x 3 seeds):
+
+| Hyperparameter | Value | F1 | ROC-AUC | PR-AUC | Rounds to converge |
+|---|---|---:|---:|---:|---:|
+| Learning rate | 0.001 | 0.513 | 0.807 | 0.479 | 17.1 |
+| | 0.003 | 0.515 | 0.808 | 0.475 | 18.0 |
+| | 0.01 | 0.511 | 0.805 | 0.467 | 18.3 |
+| Local epochs | 1 | 0.510 | 0.808 | 0.477 | 18.3 |
+| | 2 | 0.516 | 0.806 | 0.471 | 17.3 |
+| Batch size | 32 | 0.514 | 0.806 | 0.472 | 17.9 |
+| | 64 | 0.512 | 0.807 | 0.476 | 17.8 |
+| Class weights | [1, 3] | 0.518 | 0.807 | 0.476 | 18.1 |
+| | **[1, 5]** | **0.521** | 0.807 | 0.473 | **15.9** |
+| | [1, 7.9] | 0.500 | 0.806 | 0.472 | 19.5 |
+
+Selected and comparison settings (mean ± SD over three seeds):
+
+| Setting | Learning rate | Epochs | Batch | Class weights | F1 | ROC-AUC | PR-AUC | Accuracy | Rounds to converge |
+|---|---:|---:|---:|---|---:|---:|---:|---:|---:|
+| Previous config | 0.001 | 1 | 64 | [1, 7.9] | 0.487 ± 0.006 | 0.807 ± 0.001 | 0.478 ± 0.002 | 0.847 | 20.0 |
+| **Selected** | 0.003 | 1 | 64 | [1, 5] | **0.522 ± 0.004** | **0.810 ± 0.001** | 0.480 ± 0.005 | 0.873 | **14.0** |
+| Same, 2 epochs | 0.001 | 2 | 64 | [1, 5] | 0.524 ± 0.003 | 0.806 ± 0.001 | 0.481 ± 0.003 | 0.875 | 14.7 |
+| Best PR-AUC | 0.001 | 1 | 32 | [1, 3] | 0.514 ± 0.004 | 0.809 ± 0.000 | 0.482 ± 0.002 | 0.882 | 18.7 |
+| Higher learning rate | 0.01 | 1 | 64 | [1, 5] | 0.517 ± 0.002 | 0.808 ± 0.001 | 0.474 ± 0.003 | 0.872 | 20.0 |
+
+Decision: `learning_rate: 0.003`, `local_epochs: 1`, `batch_size: 64`,
+`class_weights: [1.0, 5.0]` in `sim_tabular.yaml` and `demo_tabular.yaml`.
+
+- **The class weight matters most.** The full weight ratio (7.9 = negatives / positives)
+  over-predicts "yes": recall rises but precision and accuracy fall, so F1 drops by about 0.02
+  to 0.035. A milder weight of 5 gives the best F1 and the fastest convergence.
+- **The other three hardly matter.** ROC-AUC (0.805 to 0.811) and PR-AUC (0.47 to 0.48) differ
+  by less than one standard deviation between the top settings, so the choice among them is a
+  tie; a learning rate of 0.01 is the only clearly worse value (lower PR-AUC, noisier).
+- **Why this one among the ties:** among the settings with the best F1 and ROC-AUC it
+  converges earliest (14 rounds) and needs only one local epoch per round, which keeps a
+  round short for the demo (`round_deadline_s` 90).
+- **Compared with the previous config:** F1 +0.035, accuracy +0.026, converged 6 rounds
+  earlier; ROC-AUC and PR-AUC are unchanged within noise.
+
+Limitations: the metrics are measured on the held-out test set that is also used to rank the
+settings, so the selected F1 is slightly optimistic and not an unbiased final test; the client
+validation metrics point the same way. Every run reuses one partition (seed 42), and each
+setting has three seeds. Treat differences below about 0.01 F1 as noise. The grid is a
+coarse screen, not an exhaustive search (no weight decay, dropout, FedProx mu or more than two
+local epochs).
+
+### Tabular training baselines
+
+Reproduce with `python backend/scripts/baselines_tabular.py` (about 30 seconds). Two baselines
+use the tuned settings of `sim_tabular.yaml` and `BankTaskSpec`, with seeds 42, 43 and 44:
+**centralized** trains one model on all four clients' training splits together, and
+**local only** trains one model per client on that client's training split alone. Both train
+for `num_rounds x local_epochs` = 20 epochs, so every row is seen as often as in a federated
+run. Files (same layout as the text baselines): `results/tabular_baselines/tabular/results.json`,
+`summary.csv`, `report.md`.
+
+| Baseline | F1 | ROC-AUC | PR-AUC | Accuracy | Worst client F1 |
+|---|---:|---:|---:|---:|---:|
+| Centralized (held-out test) | 0.507 ± 0.006 | 0.797 ± 0.003 | 0.466 ± 0.007 | 0.865 ± 0.002 | n/a |
+| Local only (held-out test, mean of 4 clients) | 0.446 ± 0.014 | 0.769 ± 0.007 | 0.410 ± 0.009 | 0.844 ± 0.009 | 0.422 |
+| Local only (own client test, mean of 4 clients) | 0.431 ± 0.016 | 0.751 ± 0.005 | 0.383 ± 0.009 | 0.836 ± 0.012 | 0.402 |
+
+Reading the table: pooling the data gives the best baseline, and a client that trains alone
+loses about 0.06 F1 and 0.03 ROC-AUC against it. The held-out rows can be compared across
+methods (including the federated runs); the "own client test" row shows each model on its own
+client's distribution only and must not be pooled with the held-out rows. A client's test
+split holds about 186 "yes" rows, so per-client numbers are noisy. The baselines reuse the
+federated hyperparameters and were not tuned separately, so the federated model (final
+held-out F1 0.52, ROC-AUC 0.81, see the tuning table above) is not below the centralized
+baseline here; do not read that as federation beating pooled training.
+
+### Tabular: FedAvg vs FedProx, centralized and local only
+
+Reproduce with `python backend/scripts/run_comparison.py --tasks tabular` (about 10 minutes).
+Seeds 42, 43 and 44, the tuned settings of `sim_tabular.yaml`, 20 rounds. FedAvg and FedProx
+(mu 0.001, 0.01, 0.1) run on the IID partitions and on a label-skew partition (Dirichlet
+split of the same rows, alpha 0.3, seed 42); centralized and local-only are the baselines of
+the previous section (the numbers agree with `baselines_tabular.py`). Everything except the
+last row is scored on the server's held-out test set. Files: `results/comparison/tabular/results.json`
+(every run with the global metrics per round), `summary.csv` (mean and standard deviation over
+the seeds), `report.md` and `curves.png` (global F1 per round with the two baselines as
+horizontal lines); the files have the same layout as the text task's, so both modalities can
+go into one table.
+
+| Case | F1 | ROC-AUC | PR-AUC | Accuracy |
+|---|---:|---:|---:|---:|
+| FedAvg, IID | 0.522 ± 0.004 | 0.810 ± 0.001 | 0.480 ± 0.005 | 0.873 ± 0.003 |
+| FedProx mu 0.001, IID | 0.520 ± 0.003 | 0.810 ± 0.001 | 0.485 ± 0.006 | 0.871 ± 0.003 |
+| FedProx mu 0.01, IID | 0.520 ± 0.004 | 0.808 ± 0.002 | 0.480 ± 0.003 | 0.871 ± 0.002 |
+| FedProx mu 0.1, IID | 0.509 ± 0.003 | 0.802 ± 0.000 | 0.473 ± 0.004 | 0.866 ± 0.003 |
+| FedAvg, label skew | 0.257 ± 0.018 | 0.796 ± 0.001 | 0.448 ± 0.006 | 0.417 ± 0.086 |
+| FedProx mu 0.001, label skew | 0.259 ± 0.015 | 0.797 ± 0.000 | 0.454 ± 0.006 | 0.429 ± 0.065 |
+| FedProx mu 0.01, label skew | 0.260 ± 0.015 | 0.804 ± 0.000 | 0.467 ± 0.002 | 0.423 ± 0.064 |
+| FedProx mu 0.1, label skew | 0.251 ± 0.027 | 0.801 ± 0.001 | 0.465 ± 0.003 | 0.382 ± 0.130 |
+| Centralized | 0.507 ± 0.006 | 0.797 ± 0.003 | 0.466 ± 0.007 | 0.865 ± 0.002 |
+| Local only (mean of 4 clients) | 0.446 ± 0.014 | 0.769 ± 0.007 | 0.410 ± 0.009 | 0.844 ± 0.009 |
+| Local only, own client test | 0.431 ± 0.016 | 0.751 ± 0.005 | 0.383 ± 0.009 | 0.836 ± 0.012 |
+
+- **IID:** FedAvg and FedProx with mu up to 0.01 are indistinguishable (F1 within 0.002, less
+  than one standard deviation). mu 0.1 is slightly worse (F1 -0.013, ROC-AUC -0.008): with
+  identically distributed clients the proximal term only slows local training. Federated
+  training reaches at least the centralized baseline and clearly beats training alone (+0.08
+  F1, +0.04 ROC-AUC over local only); the baselines were not tuned separately.
+- **Label skew:** all four methods lose a lot. ROC-AUC (the ranking) drops by only 0.001 to
+  0.014, but the 0.5 decision threshold breaks: F1 falls to about 0.25 and accuracy to about
+  0.4. The global model flags too many customers as "yes" (FedAvg: recall 0.89, precision
+  0.15, against 0.62 and 0.45 on IID data). FedProx does not repair that
+  (F1 differences are within noise). It does help the ranking: mu 0.01 gives ROC-AUC 0.804
+  and PR-AUC 0.467 against 0.796 and 0.448 for FedAvg, a gain of about 0.008 and 0.019, larger
+  than the seed spread. Treat the label-skew F1 as a threshold problem, not a ranking problem;
+  tuning the class weights and the decision threshold for skewed partitions is future work.
+- Three seeds on one partition: differences below about 0.01 are noise.
+
 ## Text dataset: UCI SMS Spam Collection
 
 | Field | Value |
