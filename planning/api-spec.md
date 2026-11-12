@@ -1,6 +1,6 @@
 # CFL Gateway REST API & Message Specification
 
-**Document Version:** 1.1.0 (aligned with the implementation, 2026-11-04)  
+**Document Version:** 1.2.0 (aligned with the implementation, 2026-11-11)  
 **Author / maintainer:** Enes Tunç (etunc22@ku.edu.tr)  
 **Related Work Packages:** WP1 (T1.3 Interface Specification), WP3 (T3.1 Secure API Gateway)  
 **Deliverable Association:** D1.3 (API and Message Specification)  
@@ -10,6 +10,8 @@
 - [`conformance-manifest.md`](conformance-manifest.md) — Client conformance & semantic validation contract
 - [`interfaces.md`](interfaces.md) — Team decisions (sections 6, 7 and 9 concern this API)
 - Sequence Diagrams: [`01_registration_conformance.puml`](../diagrams/sequence/01_registration_conformance.puml), [`02_normal_round.puml`](../diagrams/sequence/02_normal_round.puml), [`03_dropout_reconnection.puml`](../diagrams/sequence/03_dropout_reconnection.puml), [`04_crash_resume.puml`](../diagrams/sequence/04_crash_resume.puml)
+
+**Changes in 1.2.0:** reviewed against the gateway and against an independent client written only from this document ([`independent-client/`](../independent-client/)). New section 7 (everything a client in another language needs that the endpoints alone do not say: pre-processing, the model's forward pass, the safetensors layout, local training and metric definitions, retry rules); documented behaviour of malformed requests (`Authorization` header, non-integer model version, invalid report body, missing `weights` part, empty `GET /conformance`); `metrics` values must be finite; `train_loss` includes the proximal term.
 
 **Changes in 1.1.0:** manifest identity `"<dataset>@<version>"`; new `GET /conformance`; conformance report fields for categories, tokenizer, label and forward tests, and check 13 `forward_output_mismatch`; registration required before every other endpoint; model downloads limited to participants; final model `format` values `onnx`, `safetensors`, `artifact`, `manifest`; idempotent retries acknowledged before stale checks; SHA-256 token hashes; protocol version `0.1`; public port 443; the web read-only API (section 4) is served by the website, not by the gateway.
 
@@ -56,6 +58,7 @@ Authorization: Bearer <client token>
 ```
 - **Token issuance:** an administrator approves a client and receives its token once: `cfl-admin add-client <client_id>` (`--token-file <file>` writes it to a mode-600 file instead of printing it). The token is delivered out of band and stored by the site as a Docker secret. Tokens are never baked into container images, committed to Git or stored by the server. Further commands: `cfl-admin rotate-token <id>`, `disable <id>`, `enable <id>`, `list`.
 - **Token format and storage:** `cfl_` followed by 43 URL-safe characters (256 random bits). `clients.token_hash` stores its SHA-256. A slow salted hash (Argon2/bcrypt) protects guessable passwords; these tokens cannot be guessed, and an unsalted hash lets the Gateway find the client with one indexed lookup (GitHub stores its API tokens the same way).
+- **Malformed header:** a value that is not `Bearer <token>` (another scheme, no token) counts as missing: `401 missing_token`. A well-formed token that matches no client is `401 invalid_token`. Both answers carry `WWW-Authenticate: Bearer realm="cfl"`.
 - **Identity binding:** the client identity comes from the token. A request whose body claims another `client_id` is rejected with `403 identity_mismatch`.
 - **Registration first:** every endpoint except `POST /register` requires a client with status `REGISTERED` (`403 not_registered`).
 - **Activity tracking:** each authenticated request updates `clients.last_seen_at`.
@@ -168,6 +171,8 @@ The administrator can restrict accepted versions with `CFL_ALLOWED_CLIENT_VERSIO
 ]
 ```
 
+`GET /conformance` returns `[]` while no run is `RUNNING`; a client waits and asks again (the runtime polls every few seconds). Manifests are served only for running runs: after a run has finished, its manifest answers `404 unknown_manifest`.
+
 `GET /conformance/{manifest_version}` serves that manifest exactly as the run pinned it (`<run_id>/manifest.json`).
 
 - **`200 OK`:** the manifest JSON, conforming to [`conformance-manifest.schema.json`](conformance-manifest.schema.json). Generated examples: [`examples/bank_marketing_manifest.json`](examples/bank_marketing_manifest.json), [`examples/sms_spam_manifest.json`](examples/sms_spam_manifest.json).
@@ -274,6 +279,8 @@ The Gateway checks in this order and reports the first failure:
 }
 ```
 - **`401` / `403`:** token invalid, client disabled or not registered, `identity_mismatch`.
+- **`422 invalid_request`** (error schema, section 2.5, not a report response): the body is not valid JSON or lacks required fields (for example `declared_model`). Nothing is recorded. Problems found inside a well-formed report are `invalid_report` (a `FAILED` response).
+- A report for a manifest that no running run pins is recorded as `FAILED` with `manifest_version_mismatch` (check 2), not answered with `404`.
 
 #### Database Operations
 - `conformance_reports`: one row per attempt (`report_id`, `client_id`, `manifest_version`, `client_version`, `protocol_version`, `status`, `reason_code`, `report_payload` = the report plus the server's decision and details, `checked_at`).
@@ -329,7 +336,7 @@ Downloads a global model version.
   - `Content-Disposition: attachment; filename="global_model_v{version}.safetensors"`
   - `X-Checksum-SHA256: <sha256 recorded in the database>`
   - `X-Model-Version`, `X-Run-ID`
-- **`403 not_participant`**, **`404`** `unknown_run` / `unknown_model_version`, **`500 integrity_error`** (stored file does not match its recorded checksum; never served).
+- **`403 not_participant`**, **`404`** `unknown_run` (also for an `run_id` that is not a UUID) / `unknown_model_version` (also for negative numbers), **`422 invalid_request`** (`version` is not an integer), **`500 integrity_error`** (stored file does not match its recorded checksum; never served).
 
 #### Client-Side Action
 Compute the SHA-256 of the body and compare it with `X-Checksum-SHA256` before loading the parameters.
@@ -368,7 +375,7 @@ Uploads the local update after training.
 | `update_id` | UUIDv4 idempotency key; a retry reuses it. |
 | `model_version` | Must equal the round's input model version. |
 | `num_samples` | Local training samples; the FedAvg weight. The coordinator rejects implausible values (`rounds.max_num_samples`). |
-| `metrics` | Names and units: `interfaces.md`, section 4 (`train_loss`, `train_s`, `val_<metric>_before`, `val_<metric>_after`). |
+| `metrics` | Names and units: `interfaces.md`, section 4 (`train_loss`, `train_s`, `val_<metric>_before`, `val_<metric>_after`); definitions: section 7.5. Values must be finite JSON numbers: leave out a metric that is undefined (JSON has no `NaN`). |
 
 #### Decision order
 1. `update_id` not a UUID → **`422 invalid_update_id`**
@@ -390,7 +397,7 @@ Rejections write an `UPDATE_REJECTED` event with the reason; acknowledged retrie
 ```json
 {"accepted": false, "update_id": "6f2c...", "client_id": "bank-a", "round_id": 1, "reason": "duplicate_update"}
 ```
-A malformed `metadata` field (`422 invalid_metadata`) and a `client_id` other than the token's (`403 identity_mismatch`) return the error schema instead, because the update was never considered.
+A malformed `metadata` field (`422 invalid_metadata`), a missing `weights` or `metadata` part (`422 invalid_request`) and a `client_id` other than the token's (`403 identity_mismatch`) return the error schema instead, because the update was never considered.
 
 ---
 
@@ -406,10 +413,12 @@ Downloads the final model artifact of a completed run.
   - `X-Checksum-SHA256`: SHA-256 of this file
   - `X-Final-Model-SHA256`: SHA-256 of `model.onnx` as recorded in `runs.final_model_sha256`
   - `X-Manifest-Version`, `X-Model-Version`, `X-Run-ID`
-- **`404`** `unknown_run` / `no_final_model`, **`409 run_in_progress`**, **`422 invalid_format`**.
+- **`404`** `unknown_run` / `no_final_model`, **`409 run_in_progress`**, **`422 invalid_format`** (checked first, so an invalid `format` on an unknown run is `422`, not `404`).
 
 #### Client-Side Action
 Download `onnx` and `artifact` (and optionally `manifest`, `safetensors`), then call `cfl.core.artifact.verify_artifact(files, X-Final-Model-SHA256)`: it checks every checksum and reproduces the reference predictions with ONNX Runtime. Pre-processing (scaling, one-hot encoding or tokenization) is not part of the ONNX graph; apply it as described in `artifact.json` → `preprocessing`.
+
+A client without ONNX Runtime can verify the artifact from the other files: compare the SHA-256 of `model.onnx` with `X-Final-Model-SHA256`, every file with `artifact.json` → `files`, then run the forward pass of section 7.2 with the weights of `model.safetensors` on `artifact.json` → `reference_predictions[*].model_input` and compare the logits with `reference_predictions[*].logits` (`verification.atol`).
 
 ### 3.8 `POST /transfer`
 Optional. Reports how long a transfer took as the client observed it, including the network. The gateway cannot measure this itself: it stops timing a download before the bytes leave, and an upload has already arrived when its handler starts.
@@ -614,3 +623,70 @@ The end-of-run report (owner: Hilal) is written to the model volume; these endpo
 4. **Client side:** [`backend/src/cfl/client/http.py`](../backend/src/cfl/client/http.py) (`HttpTransport`) implements this API for Python clients: retries with exponential backoff and full jitter on connection errors, timeouts, 429 and 502/503/504 (never on other 4xx or on untrusted TLS certificates), checksum verification of every download, and per-message-type request/retry/byte/time statistics.
 5. **Deployment:** [`deploy/README.md`](../deploy/README.md). Gateway settings: `CFL_DATABASE_URL`, `CFL_MODELS_DIR` (default `/models`), `CFL_ALLOWED_CLIENT_VERSIONS`.
 6. **Automated tests** for every status code and the retry scenarios are still to be written (`backend/tests/test_gateway.py`).
+7. **Independent implementation:** [`independent-client/`](../independent-client/) is a second client (requests, NumPy, pandas; it does not import `cfl`) written from this document. It takes part in real runs next to the managed client, and its `--variant` options reproduce each conformance rejection code ([`backend/tests/test_independent_client.py`](../backend/tests/test_independent_client.py) checks them against the gateway's checker). Section 7 holds what writing it showed the endpoints alone do not say.
+
+---
+
+## 7. Implementing a Client in Another Language
+
+The endpoints (section 3) and the manifest ([`conformance-manifest.md`](conformance-manifest.md)) say how to talk to the gateway. A client also has to compute the same model inputs, the same logits and a compatible local update. This section states those rules for the `bank_marketing` task (`bank_mlp` 1.0.0). The reference code is named for each rule; where code and text differ, report it as a defect in this document. **Open:** the equivalent description for the `sms_spam` task (`sms_hash_embed`, hashing tokenizer) is not written yet; a text client has to read `cfl.tasks.text`.
+
+### 7.1 Pre-processing
+
+Input: one raw record with a value for every name in `input_schema.features`; other keys (for example `duration`) are ignored. Output: the model input vector, `float32` (compute in `float64`; the tolerance `reference_atol` is 1e-6). Process the features **in manifest order** and append their columns:
+
+| Feature `type` | Columns appended |
+|---|---|
+| `numeric` without `sentinel` | one column: `(x - mean) / std` |
+| `numeric` with `sentinel` | two columns: first `(x' - mean) / std`, where `x' = sentinel_fill` if `x == sentinel` and `x` otherwise; then the indicator `1.0` if `x == sentinel`, else `0.0` |
+| `categorical` | one column per entry of `categories`, in that order: `1.0` where the value equals the category (exact, case-sensitive string comparison), else `0.0` |
+
+`mean`, `std` and `sentinel_fill` are the manifest's values. `model_input.feature_names` names the resulting columns: `<feature>` for a numeric one, `<feature>_is_sentinel` for the indicator, `<feature>=<category>` for a one-hot column. The sentinel is compared before scaling; nothing is fitted on local data. A categorical value that is not in `categories` is an error: the reference implementation refuses the row, a client must not map it to another category. Label: `1` for `label.positive_value` (`"yes"`), `0` for `negative_value`; any other raw value is an error. Reference: `cfl.tasks.tabular.preprocessing.transform`.
+
+### 7.2 Model and forward pass
+
+`bank_mlp` has six float32 parameters (`model.parameters`; `Linear.weight` is `[out, in]`, row-major) and computes, for a row vector `x`:
+
+```
+h1     = relu(x  · W1ᵀ + b1)          fc1: 65 -> 64
+h1     = dropout(h1, p = 0.2)         training only; the identity at inference and in conformance tests
+h2     = relu(h1 · W2ᵀ + b2)          fc2: 64 -> 32
+logits = h2 · W3ᵀ + b3                fc3: 32 -> 2
+```
+
+`logits[1]` is the positive class ("yes"); the class probability is `softmax(logits)`. The `reference_sin_v1` weights (conformance-manifest.md) are filled into the parameters in the order of `model.parameters`, each tensor row-major in its **stored shape `[out, in]`**; reading a weight matrix as `[in, out]` produces different logits and is rejected as `forward_output_mismatch`. Reference: `cfl.tasks.tabular.model.BankMLP`.
+
+### 7.3 The weights file (`safetensors`)
+
+Both downloads (`GET /model/...`) and the `weights` part of `POST /update` use the [safetensors](https://github.com/huggingface/safetensors) layout, which needs no library:
+
+1. 8 bytes: the header length `N` as an unsigned little-endian 64-bit integer.
+2. `N` bytes: a UTF-8 JSON object `{"<name>": {"dtype": "F32", "shape": [...], "data_offsets": [begin, end]}, ...}`; offsets are relative to the end of the header; an optional `"__metadata__"` entry is ignored. Pad the header with spaces so the data starts on an 8-byte boundary.
+3. The tensor bytes: little-endian IEEE-754 float32, row-major.
+
+An update must contain exactly the parameters of the manifest (names, shapes, `F32`, all values finite): no more, no fewer. The gateway does not open the weights at upload: a file that breaks this is acknowledged with `200` and then excluded at aggregation (event `UPDATE_EXCLUDED`, reason `model_shape_mismatch` or `non_finite_weights`), so the client must check its own file. `checksum_sha256` is the SHA-256 (lowercase hex) of the whole file as uploaded. Verify every download against `X-Checksum-SHA256` before using it. Never load weights with a format that can execute code. Clients never initialise weights; version 0 comes from the server.
+
+### 7.4 Local training
+
+The round `config` (section 3.4, `interfaces.md` section 3) is applied exactly; a client adds no hyperparameters. Starting from the downloaded weights `w_global`:
+
+- **Optimizer:** Adam with `lr = learning_rate`, `betas = (0.9, 0.999)`, `eps = 1e-8`, created fresh for every round. `weight_decay` is L2 added to the gradient (`g += weight_decay · w`), not decoupled.
+- **Batches:** in each of `local_epochs` epochs, shuffle the training rows and cut them into consecutive batches of `batch_size`; the last batch may be smaller.
+- **Loss per batch:** class-weighted cross-entropy on the logits, `Σᵢ w[yᵢ] · ℓᵢ / Σᵢ w[yᵢ]` with `w = class_weights = [w_negative, w_positive]` (a weighted mean, as in PyTorch `CrossEntropyLoss(weight=...)`). Dropout (section 7.2) is active.
+- **FedProx:** when `proximal_mu > 0`, add `(mu / 2) · ‖w − w_global‖²` (squared L2 norm over all parameters) to every batch loss; `w_global` stays fixed during the round. For `proximal_mu = 0` nothing is added.
+- **Result:** the trained weights, uploaded as in section 7.3. `num_samples` is the number of rows in the local training split (the FedAvg weight). Bit-identical results across implementations are not required.
+
+Reference: `cfl.simulation.trainer.train_local` (verified against the independent client's NumPy training with dropout off: weights agree to about 1e-6).
+
+### 7.5 Metrics in `UpdateMetadata.metrics`
+
+`train_loss` is the mean of the batch losses of the round **including the proximal term**; `train_s` is the training time in seconds. `val_<metric>_before` is computed on the local validation split with the received global weights, `val_<metric>_after` with the trained weights; evaluation uses dropout off. `<metric>` is one of `loss` (unweighted mean cross-entropy), `accuracy`, `precision`, `recall`, `f1` (for class 1, prediction `argmax(logits)`; `0` when the denominator is 0), `roc_auc`, `pr_auc` (average precision) computed from `softmax(logits)[1]`; leave out `roc_auc` and `pr_auc` when the split contains only one class. Definitions follow scikit-learn (`cfl.core.evaluation.classification_metrics`).
+
+### 7.6 Client behaviour
+
+- **Order:** `POST /register` → `GET /conformance` (repeat until the list contains the client's dataset) → `GET /conformance/{manifest_version}` (verify the body's SHA-256 against `X-Manifest-Checksum-SHA256` and against `manifest_sha256` from the list) → `POST /conformance/report` → poll `GET /task`. A `FAILED` report is final for that manifest until the client submits a passing one; a client does not receive tasks before.
+- **One update per round:** train and upload once per `(run_id, round_id)`; after an accepted update `GET /task` answers `204` for that round, so remember the rounds already done anyway (a task can be repeated after a crash).
+- **Crash safety:** write the update (weights and metadata with its `update_id`) to disk before the first upload attempt, and resend the same file and the same `update_id` until the gateway has decided: `200` (also `duplicate_idempotent`) or a final rejection (`stale_round`, `deadline_passed`, `model_version_mismatch`, `duplicate_update`, `not_selected`, `unknown_round`, `checksum_mismatch`, `invalid_update_id`). Any other answer means try again later.
+- **Retries:** retry connection errors, timeouts, `429`, `502`, `503` and `504` with exponential backoff and full jitter (for example 0.5 s doubling up to 30 s, at most six attempts); do not retry other `4xx`. Never disable TLS verification; for a server with a private CA pass its root certificate.
+- **Final model:** after a run the client took part in has finished, download and verify the artifact (section 3.7); `409 run_in_progress` means ask again later, `404 no_final_model` means the run failed.
+- **`client_version`:** `independent-client/<version>` (or any string the administrator's `CFL_ALLOWED_CLIENT_VERSIONS` allows).
