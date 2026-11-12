@@ -357,6 +357,12 @@ class InMemoryStateStore(StateStore):
         self._events.append(event)
 
     def add_event(self, event: EventRecord) -> None:
+        # Same foreign keys as the events table, so code that passes here also passes on
+        # PostgreSQL (events.run_id -> runs, events.(run_id, round_id) -> rounds).
+        if event.run_id is not None and event.run_id not in self._runs:
+            raise ValueError(f"event references unknown run {event.run_id}")
+        if event.round_id is not None and (event.run_id, event.round_id) not in self._rounds:
+            raise ValueError(f"event references unknown round {event.run_id}/{event.round_id}")
         self._events.append(event)
 
     def events(self, run_id: str | None = None) -> list[EventRecord]:

@@ -126,18 +126,44 @@ class UpdateIntake:
         now: datetime,
         size: int,
         reason: IntakeReason | None = None,
+        *,
+        round_known: bool = True,
     ) -> EventRecord:
         payload = {"update_id": meta.update_id, "message_type": "update_upload", "bytes": size}
         if reason is not None:
             payload["reason_code"] = reason.value
+        if not round_known:
+            # events.(run_id, round_id) references rounds, so a run/round the client made up
+            # cannot go there; keep what it claimed in the payload instead.
+            payload["claimed_run_id"] = meta.run_id
+            payload["claimed_round_id"] = meta.round_id
         return EventRecord(
             event_type,
             now,
-            run_id=meta.run_id,
-            round_id=meta.round_id,
+            run_id=meta.run_id if round_known else None,
+            round_id=meta.round_id if round_known else None,
             client_id=meta.client_id,
             payload=payload,
         )
 
-    def _event(self, *args, **kwargs) -> None:
-        self.state.add_event(self._make_event(*args, **kwargs))
+    def _round_exists(self, meta: UpdateMetadata) -> bool:
+        try:
+            self.state.get_round(meta.run_id, meta.round_id)
+        except KeyError:
+            return False
+        return True
+
+    def _event(
+        self,
+        event_type: str,
+        meta: UpdateMetadata,
+        now: datetime,
+        size: int,
+        reason: IntakeReason | None = None,
+    ) -> None:
+        # A rejection may carry an unvalidated run_id/round_id (unknown_round, and the checks
+        # that run before the round lookup), so check that the round exists before using them.
+        round_known = reason is None or self._round_exists(meta)
+        self.state.add_event(
+            self._make_event(event_type, meta, now, size, reason, round_known=round_known)
+        )
