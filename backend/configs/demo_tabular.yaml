@@ -25,5 +25,7 @@ rounds:
 client:
   local_epochs: 1
   batch_size: 64
-  learning_rate: 0.001
-  class_weights: [1.0, 7.9] # ~ negatives / positives (11.3% "yes"); fixed for all clients
+  learning_rate: 0.003
+  # Chosen by the grid search in planning/data.md (results/tabular_tuning/). "yes" is 11.3% of
+  # the rows (negatives / positives = 7.9); the weight 5.0 scored better F1 than 7.9. Fixed for all clients.
+  class_weights: [1.0, 5.0]
