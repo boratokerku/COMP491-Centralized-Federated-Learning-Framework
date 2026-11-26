@@ -31,6 +31,7 @@ from cfl.coordinator.aggregator import (
     global_model_key,
 )
 from cfl.coordinator.config import RunConfig
+from cfl.coordinator.secagg_store import RoundPrivacyParams, SecAggRoundStore, UnmaskState
 from cfl.coordinator.state import RoundState, is_terminal
 from cfl.coordinator.state_store import (
     EventRecord,
@@ -54,11 +55,20 @@ from cfl.core.artifact import (
 from cfl.core.contract import initial_weights
 from cfl.core.evaluation import HeldOutEvaluator
 from cfl.core.manifest import manifest_id
+from cfl.core.privacy import calibrate_noise_std
+from cfl.core.secagg import share_to_reveal
 from cfl.core.serialization import bytes_to_state_dict, sha256, state_dict_to_bytes
 from cfl.core.store import ModelStore
-from cfl.core.strategy import build_strategy
+from cfl.core.strategy import ClientStats, build_strategy, compute_dynamic_trust_weights
 from cfl.protocol import PROTOCOL_VERSION
-from cfl.protocol.messages import TaskAssignment
+from cfl.protocol.messages import (
+    RoundKeysResponse,
+    RoundKeySubmit,
+    TaskAssignment,
+    UnmaskSharesRequest,
+    UnmaskSharesResponse,
+    UnmaskStatusResponse,
+)
 from cfl.tasks.registry import get_task
 
 Clock = Callable[[], datetime]
@@ -73,6 +83,7 @@ class Step(StrEnum):
     OPENED = "opened"  # a new round is collecting
     WAITING_FOR_CLIENTS = "waiting_for_clients"  # too few eligible clients to open a round
     COLLECTING = "collecting"  # round open, waiting for updates or the deadline
+    UNMASKING = "unmasking"  # SecAgg+ round waiting for Shamir unmask shares
     DONE = "done"  # round aggregated, global model advanced
     FAILED = "failed"  # round failed (quorum, aggregation or evaluation), model unchanged
     COMPLETED = "completed"  # all rounds attempted, final model delivered, run finished
@@ -91,7 +102,14 @@ class ResumedRun:
 
 
 WAITING_STEPS = frozenset(
-    {Step.COLLECTING, Step.WAITING_FOR_CLIENTS, Step.COMPLETED, Step.RUN_FAILED, Step.IDLE}
+    {
+        Step.COLLECTING,
+        Step.UNMASKING,
+        Step.WAITING_FOR_CLIENTS,
+        Step.COMPLETED,
+        Step.RUN_FAILED,
+        Step.IDLE,
+    }
 )
 
 
@@ -159,6 +177,7 @@ class Coordinator:
     ):
         self.state = state
         self.models = models
+        self.secagg = SecAggRoundStore(models)
         self.clock = clock
         self.repo_root = repo_root
         self._aggregators: dict[str, Aggregator] = {}
@@ -262,6 +281,33 @@ class Coordinator:
         )
 
         now = self.clock()
+        privacy_payload: dict[str, object] = {}
+        if config.privacy.enabled:
+            sigma_t = calibrate_noise_std(config.privacy.base_noise_std, len(selected))
+            threshold = (
+                config.privacy.recovery_threshold(len(selected))
+                if config.privacy.secagg_enabled
+                else None
+            )
+            trust_weights = self._compute_trust_weights(run_id, selected, round_id, config)
+            params = RoundPrivacyParams(
+                clip_norm=config.privacy.clip_norm,
+                sigma_t=sigma_t,
+                trust_weights=trust_weights,
+                secagg_enabled=config.privacy.secagg_enabled,
+                secagg_threshold=threshold,
+                selected=selected,
+            )
+            self.secagg.save_params(run_id, round_id, params)
+            privacy_payload = {
+                "privacy": {
+                    "clip_norm": params.clip_norm,
+                    "sigma_t": params.sigma_t,
+                    "secagg_enabled": params.secagg_enabled,
+                    "secagg_threshold": params.secagg_threshold,
+                }
+            }
+
         round_ = RoundRecord(
             run_id=run_id,
             round_id=round_id,
@@ -290,6 +336,7 @@ class Coordinator:
                     "eligible": len(eligible),
                     "input_model_version": run.model_version,
                     "deadline_at": round_.deadline_at.isoformat(),
+                    **privacy_payload,
                 },
             ),
         )
@@ -299,6 +346,37 @@ class Coordinator:
             expected_version=round_.state_version,
             target=RoundState.COLLECTING,
             event=EventRecord("ROUND_COLLECTING", now, run_id=run_id, round_id=round_id),
+        )
+
+    def _compute_trust_weights(
+        self, run_id: str, selected: list[str], current_round_id: int, config: RunConfig
+    ) -> dict[str, float]:
+        """Compute metadata-only trust weights α_i^t from prior rounds (never inspects weights)."""
+        stats_by_client = {cid: ClientStats(client_id=cid) for cid in selected}
+        for prev_round_id in range(1, current_round_id):
+            try:
+                prev_round = self.state.get_round(run_id, prev_round_id)
+            except KeyError:
+                continue
+            by_cid = {p.client_id: p for p in self.state.participants(run_id, prev_round_id)}
+            for cid, cs in stats_by_client.items():
+                part = by_cid.get(cid)
+                if part is None:
+                    continue
+                cs.rounds_selected += 1
+                if part.status is ParticipantStatus.UPDATE_ACCEPTED:
+                    cs.rounds_participated += 1
+                    upd = self.state.find_update(run_id, prev_round_id, cid)
+                    if upd is not None:
+                        if upd.received_at <= prev_round.deadline_at:
+                            cs.on_time_deliveries += 1
+                        cs.total_num_samples += upd.num_samples
+                        val_loss = upd.metrics.get("val_loss_after", upd.metrics.get("val_loss"))
+                        if val_loss is not None:
+                            cs.val_metrics.append(float(val_loss))
+        return compute_dynamic_trust_weights(
+            [stats_by_client[cid] for cid in selected],
+            max_num_samples=config.rounds.max_num_samples,
         )
 
     def task_for(self, client_id: str, run_id: str) -> TaskAssignment | None:
@@ -313,13 +391,114 @@ class Coordinator:
         statuses = {p.client_id: p.status for p in self.state.participants(run_id, round_.round_id)}
         if statuses.get(client_id) is not ParticipantStatus.SELECTED:
             return None
+        params = self.secagg.load_params(run_id, round_.round_id)
         return TaskAssignment(
             run_id=run_id,
             round_id=round_.round_id,
             model_version=round_.input_model_version,
             deadline=round_.deadline_at,
             config=round_config(RunConfig.model_validate(run.config)),
+            clip_norm=params.clip_norm if params else None,
+            sigma_t=params.sigma_t if params else None,
+            trust_weight=params.trust_weights.get(client_id) if params else None,
+            secagg_threshold=params.secagg_threshold if params else None,
         )
+
+    # -- SecAgg+ key exchange and unmasking endpoints (called by Gateway) ----------------------
+
+    def _require_secagg_round(
+        self, run_id: str, round_id: int, client_id: str
+    ) -> tuple[RunRecord, RoundRecord, RoundPrivacyParams]:
+        run = self.state.get_run(run_id)
+        config = RunConfig.model_validate(run.config)
+        if not (config.privacy.enabled and config.privacy.secagg_enabled):
+            raise ValueError("SecAgg is not enabled for this run")
+        round_ = self.state.get_round(run_id, round_id)
+        params = self.secagg.load_params(run_id, round_id)
+        if params is None or params.secagg_threshold is None:
+            raise ValueError("SecAgg parameters not found for this round")
+        if client_id not in params.selected:
+            raise PermissionError(f"{client_id} is not selected for round {round_id}")
+        return run, round_, params
+
+    def submit_round_keys(self, submit: RoundKeySubmit) -> RoundKeysResponse:
+        """Accept a selected client's ephemeral X25519 public key and encrypted peer shares."""
+        _, round_, params = self._require_secagg_round(
+            submit.run_id, submit.round_id, submit.client_id
+        )
+        if round_.state is not RoundState.COLLECTING:
+            raise ValueError(f"round {submit.round_id} is {round_.state}, not COLLECTING")
+        self.secagg.save_client_key(submit)
+        self.state.add_event(
+            EventRecord(
+                "SECAGG_KEY_SUBMITTED",
+                self.clock(),
+                submit.run_id,
+                submit.round_id,
+                submit.client_id,
+                payload={"peer_shares": len(submit.encrypted_shares)},
+            )
+        )
+        return self.secagg.keys_response_for(
+            submit.run_id,
+            submit.round_id,
+            submit.client_id,
+            params.selected,
+            params.secagg_threshold,
+        )
+
+    def get_round_keys(self, run_id: str, round_id: int, client_id: str) -> RoundKeysResponse:
+        """Return peer public keys and incoming encrypted shares for a selected client."""
+        _, _, params = self._require_secagg_round(run_id, round_id, client_id)
+        return self.secagg.keys_response_for(
+            run_id, round_id, client_id, params.selected, params.secagg_threshold
+        )
+
+    def get_unmask_status(self, run_id: str, round_id: int, client_id: str) -> UnmaskStatusResponse:
+        """Tell a selected client whether unmasking has started and who survived/dropped."""
+        self._require_secagg_round(run_id, round_id, client_id)
+        unmask = self.secagg.load_unmask_state(run_id, round_id)
+        if unmask is None:
+            return UnmaskStatusResponse(run_id=run_id, round_id=round_id, ready=False)
+        return UnmaskStatusResponse(
+            run_id=run_id,
+            round_id=round_id,
+            ready=True,
+            surviving=unmask.surviving,
+            dropped=unmask.dropped,
+            deadline=unmask.unmask_deadline,
+        )
+
+    def submit_unmask_shares(self, req: UnmaskSharesRequest) -> UnmaskSharesResponse:
+        """Accept Shamir shares from a surviving client during the UNMASKING sub-phase."""
+        _, round_, _ = self._require_secagg_round(req.run_id, req.round_id, req.client_id)
+        if round_.state is not RoundState.COLLECTING:
+            raise ValueError(f"round {req.round_id} is {round_.state}, not accepting unmask shares")
+        unmask = self.secagg.load_unmask_state(req.run_id, req.round_id)
+        if unmask is None:
+            raise ValueError(f"round {req.round_id} has not entered unmasking yet")
+        surviving_set, dropped_set = set(unmask.surviving), set(unmask.dropped)
+        if req.client_id not in surviving_set:
+            raise PermissionError(f"{req.client_id} is not a surviving participant")
+        for item in req.shares:
+            expected_kind = share_to_reveal(item.target_client_id, surviving_set, dropped_set)
+            if item.kind != expected_kind.value:
+                raise ValueError(
+                    f"expected {expected_kind.value} share for {item.target_client_id}, "
+                    f"got {item.kind}"
+                )
+        self.secagg.save_unmask_shares(req)
+        self.state.add_event(
+            EventRecord(
+                "SECAGG_UNMASK_SUBMITTED",
+                self.clock(),
+                req.run_id,
+                req.round_id,
+                req.client_id,
+                payload={"share_count": len(req.shares)},
+            )
+        )
+        return UnmaskSharesResponse(accepted=True, round_id=req.round_id)
 
     def resume(self) -> list[ResumedRun]:
         """Called once when the coordinator process starts.
@@ -458,7 +637,11 @@ class Coordinator:
 
     def _close_if_ready(self, run: RunRecord, round_: RoundRecord) -> Step:
         """All selected clients reported, or the deadline passed: mark missing clients as
-        dropouts, then aggregate if the quorum is met or fail the round."""
+        dropouts, then aggregate (after SecAgg unmasking when enabled) or fail the round."""
+        config = RunConfig.model_validate(run.config)
+        if config.privacy.enabled and config.privacy.secagg_enabled:
+            return self._close_secagg_round(run, config, round_)
+
         now = self.clock()
         participants = self.state.participants(run.run_id, round_.round_id)
         waiting = [p.client_id for p in participants if p.status is ParticipantStatus.SELECTED]
@@ -504,33 +687,176 @@ class Coordinator:
             ),
         )
         aggregating = self.state.get_round(run.run_id, round_.round_id)
-        return self._aggregate(run, RunConfig.model_validate(run.config), aggregating)
+        return self._aggregate(run, config, aggregating)
+
+    def _close_secagg_round(self, run: RunRecord, config: RunConfig, round_: RoundRecord) -> Step:
+        """SecAgg+ round closure: upload collection -> Shamir unmasking -> blind aggregation."""
+        now = self.clock()
+        params = self.secagg.load_params(run.run_id, round_.round_id)
+        if params is None or params.secagg_threshold is None:
+            self._fail_round(round_, "secagg_params_missing", "missing SecAgg round parameters")
+            return Step.FAILED
+        threshold = params.secagg_threshold
+
+        unmask = self.secagg.load_unmask_state(run.run_id, round_.round_id)
+        if unmask is None:
+            participants = self.state.participants(run.run_id, round_.round_id)
+            waiting = [p.client_id for p in participants if p.status is ParticipantStatus.SELECTED]
+            deadline_passed = now >= round_.deadline_at
+            if waiting and not deadline_passed:
+                return Step.COLLECTING
+
+            for client_id in waiting:
+                self.state.set_participant_status(
+                    run.run_id,
+                    round_.round_id,
+                    client_id,
+                    ParticipantStatus.DROPOUT,
+                    now,
+                    EventRecord(
+                        "CLIENT_DROPOUT",
+                        now,
+                        run.run_id,
+                        round_.round_id,
+                        client_id,
+                        {"reason_code": "deadline_no_update"},
+                    ),
+                    reason_code="deadline_no_update",
+                )
+            updates = self.state.updates(run.run_id, round_.round_id)
+            surviving = sorted(u.client_id for u in updates)
+            needed = max(round_.min_participants, threshold)
+            if len(surviving) < needed:
+                for u in updates:
+                    self.models.delete(u.weights_path)
+                self.secagg.cleanup_round(run.run_id, round_.round_id, params.selected)
+                self._fail_round(
+                    round_, "quorum_not_met", f"{len(surviving)} updates, need {needed}"
+                )
+                return Step.FAILED
+
+            dropped = sorted(set(params.selected) - set(surviving))
+            unmask = UnmaskState(
+                surviving=surviving,
+                dropped=dropped,
+                unmask_deadline=now + timedelta(seconds=config.rounds.round_deadline_s),
+            )
+            self.secagg.save_unmask_state(run.run_id, round_.round_id, unmask)
+            self.state.add_event(
+                EventRecord(
+                    "ROUND_UNMASKING",
+                    now,
+                    run.run_id,
+                    round_.round_id,
+                    payload={
+                        "surviving": surviving,
+                        "dropped": dropped,
+                        "threshold": threshold,
+                        "unmask_deadline": unmask.unmask_deadline.isoformat(),
+                    },
+                )
+            )
+
+        secrets = self.secagg.collect_recovery_secrets(
+            run.run_id, round_.round_id, unmask.surviving, unmask.dropped, threshold
+        )
+        if secrets is None:
+            if now >= unmask.unmask_deadline:
+                for u in self.state.updates(run.run_id, round_.round_id):
+                    self.models.delete(u.weights_path)
+                self.secagg.cleanup_round(run.run_id, round_.round_id, params.selected)
+                self._fail_round(
+                    round_,
+                    "unmasking_quorum_not_met",
+                    f"fewer than {threshold} unmask shares received before deadline",
+                )
+                return Step.FAILED
+            return Step.UNMASKING
+
+        self.state.transition_round(
+            run.run_id,
+            round_.round_id,
+            round_.state_version,
+            RoundState.AGGREGATING,
+            EventRecord(
+                "ROUND_AGGREGATING",
+                now,
+                run.run_id,
+                round_.round_id,
+                payload={"received": len(unmask.surviving), "dropouts": len(unmask.dropped)},
+            ),
+        )
+        aggregating = self.state.get_round(run.run_id, round_.round_id)
+        return self._aggregate(run, config, aggregating)
 
     def _aggregate(self, run: RunRecord, config: RunConfig, round_: RoundRecord) -> Step:
         started = self.clock()
         updates = self.state.updates(run.run_id, round_.round_id)
-        result = self._aggregator(run, config).aggregate(
-            RoundInput(
-                run_id=run.run_id,
-                round_id=round_.round_id,
-                input_version=round_.input_model_version,
-                input_key=round_.input_model_path,
-                input_sha256=round_.input_model_sha256,
-                updates=[
-                    UpdateRecord(
-                        u.update_id,
-                        u.client_id,
-                        u.model_version,
-                        u.num_samples,
-                        u.weights_path,
-                        u.checksum_sha256,
-                    )
-                    for u in updates
-                ],
-                min_participants=round_.min_participants,
-                max_num_samples=config.rounds.max_num_samples,
+        secagg_self_seeds = None
+        secagg_dropped_keys = None
+        secagg_surviving_pks = None
+        params = self.secagg.load_params(run.run_id, round_.round_id)
+        secagg_active = config.privacy.enabled and config.privacy.secagg_enabled
+
+        if secagg_active:
+            unmask = self.secagg.load_unmask_state(run.run_id, round_.round_id)
+            if params is None or params.secagg_threshold is None or unmask is None:
+                self._fail_round(round_, "secagg_state_missing", "missing SecAgg unmasking state")
+                return Step.FAILED
+            secrets = self.secagg.collect_recovery_secrets(
+                run.run_id,
+                round_.round_id,
+                unmask.surviving,
+                unmask.dropped,
+                params.secagg_threshold,
             )
-        )
+            if secrets is None:
+                self._fail_round(
+                    round_, "unmasking_quorum_not_met", "insufficient shares for SecAgg unmasking"
+                )
+                return Step.FAILED
+            secagg_self_seeds, secagg_dropped_keys = secrets
+            client_keys = self.secagg.load_client_keys(
+                run.run_id, round_.round_id, unmask.surviving
+            )
+            secagg_surviving_pks = {
+                cid: bytes.fromhex(client_keys[cid].public_key_hex)
+                for cid in unmask.surviving
+                if cid in client_keys
+            }
+
+        try:
+            result = self._aggregator(run, config).aggregate(
+                RoundInput(
+                    run_id=run.run_id,
+                    round_id=round_.round_id,
+                    input_version=round_.input_model_version,
+                    input_key=round_.input_model_path,
+                    input_sha256=round_.input_model_sha256,
+                    updates=[
+                        UpdateRecord(
+                            u.update_id,
+                            u.client_id,
+                            u.model_version,
+                            u.num_samples,
+                            u.weights_path,
+                            u.checksum_sha256,
+                        )
+                        for u in updates
+                    ],
+                    min_participants=round_.min_participants,
+                    max_num_samples=config.rounds.max_num_samples,
+                    privacy_delta=config.privacy.enabled,
+                    secagg_enabled=secagg_active,
+                    secagg_self_seeds=secagg_self_seeds,
+                    secagg_dropped_keys=secagg_dropped_keys,
+                    secagg_surviving_public_keys=secagg_surviving_pks,
+                    cleanup_updates=config.privacy.enabled,
+                )
+            )
+        finally:
+            if secagg_active and params is not None:
+                self.secagg.cleanup_round(run.run_id, round_.round_id, params.selected)
         now = self.clock()
         by_update = {u.update_id: u for u in updates}
         for update_id, reason in result.rejected.items():

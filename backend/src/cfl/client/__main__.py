@@ -103,10 +103,17 @@ def check(s: ClientSettings) -> int:
     except OSError as exc:
         fail(f"state directory {state}: {exc.strerror}")
 
+    if s.client_cert and s.client_key:
+        for label, path in (("client cert", s.client_cert), ("client key", s.client_key)):
+            if path.is_file():
+                ok(f"mTLS {label} {path}")
+            else:
+                fail(f"mTLS {label} missing: {path}")
+
     server = s.server_url  # https:// is enforced by ClientSettings
     if server:
         try:
-            response = httpx.get(f"{server}/health", timeout=10, verify=s.verify)
+            response = httpx.get(f"{server}/health", timeout=10, verify=s.verify, cert=s.cert)
             response.raise_for_status()
             remote = response.json().get("protocol_version")
             if remote == PROTOCOL_VERSION:
@@ -155,7 +162,7 @@ def conformance(s: ClientSettings, manifest_file: Path | None) -> int:
 
         s.require("server_url", "client_id")
         token = s.token_file.read_text().strip()
-        transport = HttpTransport(s.server_url, token, verify=s.verify)
+        transport = HttpTransport(s.server_url, token, verify=s.verify, cert=s.cert)
         from cfl.protocol.messages import RegisterRequest
 
         # GET /conformance needs a registered client; registering again is harmless.
@@ -284,7 +291,9 @@ def run(s: ClientSettings, exit_after_final: bool = False) -> int:
         print(f"error: token file {s.token_file}: {exc.strerror}", file=sys.stderr)
         return 2
     print(f"cfl-client settings: {s.describe()}", flush=True)
-    transport = HttpTransport(s.server_url, token, verify=s.verify, user_agent=s.client_version)
+    transport = HttpTransport(
+        s.server_url, token, verify=s.verify, cert=s.cert, user_agent=s.client_version
+    )
     runtime = ClientRuntime(
         transport=transport,
         task=_load_task_spec(s),
