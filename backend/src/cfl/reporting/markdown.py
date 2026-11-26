@@ -66,6 +66,25 @@ def render_markdown(summary: dict[str, Any], plots: list[str]) -> str:
     out += ["## Configuration", "", f"SHA-256: `{summary['config_sha256']}`", "", "```json"]
     out += [json.dumps(summary["config"], indent=2, sort_keys=True), "```", ""]
 
+    priv = summary.get("privacy")
+    if priv is not None:
+        out += ["## Privacy", ""]
+        priv_rows = [
+            ["Privacy extension", "enabled" if priv.get("enabled") else "disabled"],
+            ["SecAgg+ masking", "enabled" if priv.get("secagg_enabled") else "disabled"],
+        ]
+        if priv.get("enabled"):
+            priv_rows += [
+                ["Clip norm (C)", _num(priv.get("clip_norm"), 4)],
+                ["Base noise std (σ₀)", _num(priv.get("base_noise_std"), 4)],
+                ["Mean calibrated σ_t", _num(priv.get("mean_sigma_t"), 4)],
+            ]
+        if priv.get("secagg_enabled"):
+            priv_rows.append(
+                ["Min recovery ratio (k_t / N_t)", _num(priv.get("min_recovery_ratio"), 3)]
+            )
+        out += _table(["Setting", "Value"], priv_rows)
+
     out += ["## Rounds", ""]
     out += [
         f"Attempted: **{rs['attempted']}**, completed: **{rs['completed']}**, "
