@@ -24,6 +24,8 @@ x-server: &server
     CFL_MODELS_DIR: /models
     # Managed client versions the gateway accepts at registration (comma-separated patterns)
     CFL_ALLOWED_CLIENT_VERSIONS: ${CFL_ALLOWED_CLIENT_VERSIONS:-}
+    # Require Caddy-verified mTLS client cert CN to match the bearer token's client_id
+    CFL_REQUIRE_MTLS: ${CFL_REQUIRE_MTLS:-false}
 
 services:
   postgres:
@@ -138,7 +140,8 @@ services:
       - "${CFL_HTTPS_PORT:-443}:443"
       - "${CFL_HTTPS_PORT:-443}:443/udp"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${CFL_CADDYFILE:-./Caddyfile}:/etc/caddy/Caddyfile:ro
+      - ${CFL_MTLS_DIR:-./mtls}:/etc/caddy/mtls:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:

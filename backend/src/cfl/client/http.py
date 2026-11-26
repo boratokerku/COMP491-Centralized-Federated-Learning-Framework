@@ -91,9 +91,9 @@ class TransferStats:
 
 
 def _tls_failure(exc: BaseException) -> bool:
-    """Certificate problems do not go away by retrying: report them at once."""
+    """Certificate / mTLS handshake problems do not go away by retrying: report them at once."""
     while exc is not None:
-        if isinstance(exc, ssl.SSLCertVerificationError):
+        if isinstance(exc, ssl.SSLError):
             return True
         exc = exc.__cause__ or exc.__context__
     return False
@@ -116,6 +116,7 @@ class HttpTransport(Transport):
         token: str,
         *,
         verify: str | bool = True,
+        cert: tuple[str, str] | str | None = None,
         timeout: httpx.Timeout | None = None,
         retry: RetryPolicy | None = None,
         client: httpx.Client | None = None,
@@ -124,7 +125,8 @@ class HttpTransport(Transport):
         rng: random.Random | None = None,
     ):
         """`verify` is True (system CAs, e.g. Let's Encrypt) or the path of a CA bundle for a
-        server with its own CA. `client` replaces the HTTP client, e.g. in tests."""
+        server with its own CA. `cert` is an optional `(cert_path, key_path)` tuple for mTLS.
+        `client` replaces the HTTP client, e.g. in tests."""
         if not base_url.startswith("https://"):
             raise ValueError("the gateway must be reached over https://")
         self.retry = retry or RetryPolicy()
@@ -136,6 +138,7 @@ class HttpTransport(Transport):
             client = httpx.Client(
                 base_url=base_url.rstrip("/"),
                 verify=verify,
+                cert=cert,
                 timeout=timeout or httpx.Timeout(10.0, read=120.0, write=120.0),
                 headers=headers,
             )

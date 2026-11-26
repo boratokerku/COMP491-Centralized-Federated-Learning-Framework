@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,8 @@ OPTIONS: dict[str, Option] = {
         "--state-dir", "CFL_STATE_DIR", "writable folder for pending updates and final models"
     ),
     "ca_bundle": Option("--ca-bundle", "CFL_CA_BUNDLE", "CA certificate of a self-signed server"),
+    "client_cert": Option("--client-cert", "CFL_CLIENT_CERT", "client TLS certificate for mTLS"),
+    "client_key": Option("--client-key", "CFL_CLIENT_KEY", "client TLS private key for mTLS"),
     "poll_interval": Option(
         "--poll-interval", "CFL_POLL_INTERVAL", "seconds between polls when idle", float
     ),
@@ -51,7 +53,7 @@ OPTIONS: dict[str, Option] = {
         "--client-version", "CFL_CLIENT_VERSION", "version announced at registration"
     ),
 }
-PATH_FIELDS = ("token_file", "partition_dir", "state_dir", "ca_bundle")
+PATH_FIELDS = ("token_file", "partition_dir", "state_dir", "ca_bundle", "client_cert", "client_key")
 
 
 class SettingsError(ValueError):
@@ -69,9 +71,17 @@ class ClientSettings(BaseModel):
     partition_dir: Path = Path("/data")
     state_dir: Path = Path("/state")
     ca_bundle: Path | None = None
+    client_cert: Path | None = None
+    client_key: Path | None = None
     poll_interval: float = Field(default=3.0, gt=0)
     seed: int = 0
     client_version: str = "cfl-client/dev"
+
+    @model_validator(mode="after")
+    def _mtls_pair(self) -> ClientSettings:
+        if (self.client_cert is None) != (self.client_key is None):
+            raise ValueError("client_cert and client_key must both be set together for mTLS")
+        return self
 
     @field_validator("server_url")
     @classmethod
@@ -91,6 +101,13 @@ class ClientSettings(BaseModel):
     def verify(self) -> str | bool:
         """httpx `verify`: the CA bundle when given, otherwise the system CAs."""
         return str(self.ca_bundle) if self.ca_bundle else True
+
+    @property
+    def cert(self) -> tuple[str, str] | None:
+        """httpx `cert`: `(client_cert, client_key)` when mTLS is configured, else None."""
+        if self.client_cert and self.client_key:
+            return (str(self.client_cert), str(self.client_key))
+        return None
 
     def require(self, *names: str) -> None:
         missing = [n for n in names if getattr(self, n) in (None, "")]

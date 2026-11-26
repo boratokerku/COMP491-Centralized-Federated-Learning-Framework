@@ -13,5 +13,7 @@ partition_dir: ../../data/tabular/partitions/bank_marketing/client_0
 state_dir: state                 # keep it: pending updates are resent from here after a crash
 
 # ca_bundle: ca/root.crt         # only for a server with its own CA (local testing)
+# client_cert: ca/bank-a.crt     # optional mTLS client certificate (paired with client_key)
+# client_key: ca/bank-a.key      # chmod 600; optional mTLS client private key
 poll_interval: 3
 seed: 0

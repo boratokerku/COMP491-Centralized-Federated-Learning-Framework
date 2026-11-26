@@ -371,7 +371,7 @@ class Coordinator:
                         if upd.received_at <= prev_round.deadline_at:
                             cs.on_time_deliveries += 1
                         cs.total_num_samples += upd.num_samples
-                        val_loss = upd.metrics.get("val_loss")
+                        val_loss = upd.metrics.get("val_loss_after", upd.metrics.get("val_loss"))
                         if val_loss is not None:
                             cs.val_metrics.append(float(val_loss))
         return compute_dynamic_trust_weights(

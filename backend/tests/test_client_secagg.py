@@ -338,6 +338,50 @@ class TestClientRuntimePrivacy:
             assert not models.exists(f"{run_id}/round_1/secagg/key_{cid}.json")
             assert not models.exists(f"{run_id}/round_1/secagg/unmask_{cid}.json")
 
+    def test_secagg_upload_retry_reuses_same_update_id(self, tmp_path):
+        """A transient upload failure during SecAgg must resend the exact same update_id."""
+        clock = _ManualClock()
+        state, models = InMemoryStateStore(), InMemoryModelStore()
+        coord = Coordinator(state, models, clock=clock)
+        intake = UpdateIntake(state, models, clock=clock)
+        task = _TinyTask()
+        cids = ["c1", "c2"]
+        cfg = _privacy_config(2, 2, secagg_enabled=True, base_noise_std=0.0)
+        run_id = _start_run(coord, state, task, cfg, cids)
+
+        seen_update_ids: list[str] = []
+
+        class _FlakyUploadTransport(InMemoryTransport):
+            def upload_update(self, metadata, weights):
+                seen_update_ids.append(metadata.update_id)
+                if len(seen_update_ids) == 1:
+                    from cfl.protocol.messages import UpdateAck
+
+                    return UpdateAck(accepted=False, reason="temporary_busy")
+                return super().upload_update(metadata, weights)
+
+        t1 = _FlakyUploadTransport(coord, intake, state, models)
+        t2 = InMemoryTransport(coord, intake, state, models)
+        c1 = _make_runtime(tmp_path, t1, task, "c1", 1)
+        c2 = _make_runtime(tmp_path, t2, task, "c2", 2)
+
+        assert coord.step(run_id) is Step.OPENED
+        c1.step()
+        c2.step()
+        if c1._secagg.stage == "keys_submitted":
+            c1.step()
+        assert c1._secagg.stage == "shares_submitted"
+        assert c2._secagg.stage == "shares_submitted"
+
+        # First upload attempt returns non-final rejection -> stays in "uploading"
+        assert c1.step() is False
+        assert c1._secagg.stage == "uploading"
+        # Retry resends the exact same update_id and advances to "unmasking"
+        assert c1.step() is True
+        assert c1._secagg.stage == "unmasking"
+        assert len(seen_update_ids) == 2
+        assert seen_update_ids[0] == seen_update_ids[1]
+
 
 # ========================== 3. HttpTransport SecAgg+ Methods ==========================
 
