@@ -497,6 +497,10 @@ class ClientRuntime:
                 if not status.ready:
                     return False
                 surviving_set, dropped_set = set(status.surviving), set(status.dropped)
+                if self.client_id not in surviving_set:
+                    self.log(f"round {s.task.round_id}: excluded from SecAgg+ survivors; skipping")
+                    self._finish_secagg_round(s.task)
+                    return True
                 revealed: list[RevealedShare] = []
                 for peer_id in sorted(s.peer_shares):
                     kind = share_to_reveal(peer_id, surviving_set, dropped_set)
@@ -521,7 +525,7 @@ class ClientRuntime:
                 self.log(f"round {s.task.round_id}: SecAgg+ unmask shares submitted")
                 self._finish_secagg_round(s.task)
                 return True
-        except (GatewayHTTPError, ValueError, KeyError) as exc:
+        except (GatewayHTTPError, PermissionError, ValueError, KeyError) as exc:
             self.log(f"round {s.task.round_id}: SecAgg+ session ended ({exc})")
             self._finish_secagg_round(s.task)
             return True

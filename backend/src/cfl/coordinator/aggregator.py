@@ -80,6 +80,7 @@ class RoundInput:
     secagg_self_seeds: dict[str, bytes] | None = None
     secagg_dropped_keys: dict[str, X25519PrivateKey] | None = None
     secagg_surviving_public_keys: dict[str, bytes] | None = None
+    secagg_weight_scale: float = 1.0  # re-normalizes surviving α_i sum back to 1.0 after dropouts
     secagg_modulus: int = DEFAULT_MODULUS
     secagg_scale: float = DEFAULT_SCALE
     cleanup_updates: bool = False
@@ -219,7 +220,7 @@ class Aggregator:
                 metrics=metrics,
             )
         finally:
-            if r.cleanup_updates or r.secagg_enabled:
+            if r.cleanup_updates:
                 for u in r.updates:
                     self.store.delete(u.key)
 
@@ -240,9 +241,14 @@ class Aggregator:
             delta_agg = dequantize_state_dict(
                 unmasked, scale=r.secagg_scale, modulus=r.secagg_modulus
             )
+            if r.secagg_weight_scale != 1.0:
+                delta_agg = {k: v * r.secagg_weight_scale for k, v in delta_agg.items()}
             return delta_sum(global_weights, [delta_agg])
         if r.privacy_delta:
-            return delta_sum(global_weights, [u.weights for u in accepted])
+            deltas = [u.weights for u in accepted]
+            if r.secagg_weight_scale != 1.0:
+                deltas = [{k: v * r.secagg_weight_scale for k, v in d.items()} for d in deltas]
+            return delta_sum(global_weights, deltas)
         return self.strategy.aggregate(global_weights, accepted)
 
     def _load_verified(self, key: str, expected_sha256: str) -> StateDict:

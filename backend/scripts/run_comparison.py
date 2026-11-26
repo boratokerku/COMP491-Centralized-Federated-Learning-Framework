@@ -155,9 +155,7 @@ def _baselines(config: RunConfig, task: TaskDefinition, seed: int) -> dict[str, 
             },
             "worst_client_f1": min(a["f1"] for a in client_test),
             "best_client_f1": max(a["f1"] for a in client_test),
-            "per_client": {
-                f"client_{i}": result["client_test"] for i, result in enumerate(alone)
-            },
+            "per_client": {f"client_{i}": result["client_test"] for i, result in enumerate(alone)},
         },
     }
 
@@ -169,6 +167,10 @@ def compare(
     mus: list[float],
     alpha: float,
     baselines_only: bool = False,
+    privacy_mode: str = "off",
+    clip_norm: float = 2.0,
+    base_noise_std: float = 0.005,
+    secagg_enabled: bool = True,
 ):
     config = load_run_config(CONFIGS / f"sim_{task_name}.yaml")
     if rounds is not None:
@@ -179,6 +181,24 @@ def compare(
     strategies = [] if baselines_only else [("fedavg", {"name": "fedavg", "mu": None})]
     if not baselines_only:
         strategies += [(f"fedprox_mu{mu}", {"name": "fedprox", "mu": mu}) for mu in mus]
+
+    privacy_variants: list[tuple[str, dict]] = []
+    if privacy_mode in ("off", "both"):
+        privacy_variants.append(("", {"enabled": False, "secagg_enabled": False}))
+    if privacy_mode in ("on", "both"):
+        tag = "_secagg_dp" if secagg_enabled else "_dp"
+        privacy_variants.append(
+            (
+                tag,
+                {
+                    "enabled": True,
+                    "clip_norm": clip_norm,
+                    "base_noise_std": base_noise_std,
+                    "secagg_enabled": secagg_enabled,
+                },
+            )
+        )
+
     runs: dict[str, list[dict]] = defaultdict(list)
     for seed in seeds:
         for name, strategy in strategies:
@@ -186,15 +206,17 @@ def compare(
                 ("iid", config.task.data_dir, "iid"),
                 ("label_skew", skewed, "label_skew"),
             ):
-                case = f"{name}_{suffix}"
-                print(f"{task_name} seed={seed} {case}", flush=True)
-                run = _override(
-                    config,
-                    run={"name": case, "seed": seed},
-                    strategy=strategy,
-                    task={"data_dir": data_dir, "partition": partition},
-                )
-                runs[case].append({"seed": seed, **_federated(run)})
+                for priv_tag, priv_cfg in privacy_variants:
+                    case = f"{name}_{suffix}{priv_tag}"
+                    print(f"{task_name} seed={seed} {case}", flush=True)
+                    run = _override(
+                        config,
+                        run={"name": case, "seed": seed},
+                        strategy=strategy,
+                        task={"data_dir": data_dir, "partition": partition},
+                        privacy=priv_cfg,
+                    )
+                    runs[case].append({"seed": seed, **_federated(run)})
         print(f"{task_name} seed={seed} baselines", flush=True)
         for case, result in _baselines(config, task, seed).items():
             runs[case].append({"seed": seed, **result})
@@ -280,15 +302,49 @@ def main() -> int:
         action="store_true",
         help="run only centralized and local-only baselines (skip federated comparisons)",
     )
+    parser.add_argument(
+        "--privacy-mode",
+        choices=["off", "on", "both"],
+        default="off",
+        help="security/privacy layer comparison: off (default), on, or both (with vs without)",
+    )
+    parser.add_argument("--clip-norm", type=float, default=2.0, help="privacy clip norm C")
+    parser.add_argument(
+        "--base-noise-std", type=float, default=0.005, help="privacy base DP noise std sigma_0"
+    )
+    parser.add_argument(
+        "--no-secagg",
+        action="store_true",
+        help="when privacy is on/both, run Clip+DP only (disable SecAgg+ masking)",
+    )
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "results" / "comparison")
     args = parser.parse_args()
 
     for task in args.tasks:
-        settings = {"seeds": args.seeds, "rounds": args.rounds}
+        settings = {"seeds": args.seeds, "rounds": args.rounds, "privacy_mode": args.privacy_mode}
         if not args.baselines_only:
             settings.update({"mus": args.mus, "alpha": args.alpha})
+        if args.privacy_mode != "off":
+            settings.update(
+                {
+                    "clip_norm": args.clip_norm,
+                    "base_noise_std": args.base_noise_std,
+                    "secagg_enabled": not args.no_secagg,
+                }
+            )
         settings["baselines_only"] = args.baselines_only
-        runs = compare(task, args.seeds, args.rounds, args.mus, args.alpha, args.baselines_only)
+        runs = compare(
+            task,
+            args.seeds,
+            args.rounds,
+            args.mus,
+            args.alpha,
+            args.baselines_only,
+            privacy_mode=args.privacy_mode,
+            clip_norm=args.clip_norm,
+            base_noise_std=args.base_noise_std,
+            secagg_enabled=not args.no_secagg,
+        )
         _write(args.out / task, task, runs, settings)
         print((args.out / task / "report.md").read_text())
     return 0
