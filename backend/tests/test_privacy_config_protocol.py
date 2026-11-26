@@ -57,7 +57,11 @@ class TestPrivacySection:
     def test_existing_yaml_configs_still_load(self):
         for path in sorted(CONFIGS_DIR.glob("*.yaml")):
             cfg = load_run_config(path)
-            assert cfg.privacy.enabled is False
+            if path.stem.endswith("_privacy"):
+                assert cfg.privacy.enabled is True
+                assert cfg.privacy.secagg_enabled is True
+            else:
+                assert cfg.privacy.enabled is False
 
     def test_valid_privacy_and_secagg_config(self):
         cfg = RunConfig.model_validate(
