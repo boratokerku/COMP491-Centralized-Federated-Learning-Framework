@@ -450,11 +450,12 @@ class TestCoordinatorSecAggLifecycle:
             )
             assert ack.accepted is True
 
-        # Coordinator completes blind aggregation
+        # Coordinator completes blind aggregation (re-normalized over the 3 survivors: scale = 4/3)
         assert coord.step(run_id) is Step.DONE
         g1 = bytes_to_state_dict(models.get(global_model_key(run_id, 1)))
+        alpha_sum = sum(tasks[c].trust_weight for c in survivors)
         for k in g0:
-            expected_g1 = g0[k] + sum(expected_deltas[c][k] for c in survivors)
+            expected_g1 = g0[k] + sum(expected_deltas[c][k] for c in survivors) / alpha_sum
             torch.testing.assert_close(g1[k], expected_g1, atol=1e-5, rtol=1e-5)
 
         # Ephemeral keys, shares, and masked uploads are all cleaned up

@@ -724,7 +724,36 @@ class Coordinator:
                     reason_code="deadline_no_update",
                 )
             updates = self.state.updates(run.run_id, round_.round_id)
-            surviving = sorted(u.client_id for u in updates)
+            max_samples = config.rounds.max_num_samples
+            valid_updates = []
+            for u in updates:
+                bad_reason = None
+                if u.model_version != round_.input_model_version:
+                    bad_reason = "model_version_mismatch"
+                elif u.num_samples <= 0 or (
+                    max_samples is not None and u.num_samples > max_samples
+                ):
+                    bad_reason = "invalid_num_samples"
+                if bad_reason is not None:
+                    self.state.set_participant_status(
+                        run.run_id,
+                        round_.round_id,
+                        u.client_id,
+                        ParticipantStatus.REJECTED,
+                        now,
+                        EventRecord(
+                            "UPDATE_EXCLUDED",
+                            now,
+                            run.run_id,
+                            round_.round_id,
+                            u.client_id,
+                            {"update_id": u.update_id, "reason_code": bad_reason},
+                        ),
+                        reason_code=bad_reason,
+                    )
+                else:
+                    valid_updates.append(u)
+            surviving = sorted(u.client_id for u in valid_updates)
             needed = max(round_.min_participants, threshold)
             if len(surviving) < needed:
                 for u in updates:
@@ -795,6 +824,7 @@ class Coordinator:
         secagg_self_seeds = None
         secagg_dropped_keys = None
         secagg_surviving_pks = None
+        secagg_weight_scale = 1.0
         params = self.secagg.load_params(run.run_id, round_.round_id)
         secagg_active = config.privacy.enabled and config.privacy.secagg_enabled
 
@@ -824,39 +854,47 @@ class Coordinator:
                 for cid in unmask.surviving
                 if cid in client_keys
             }
+            surviving_set = set(unmask.surviving)
+            updates = [u for u in updates if u.client_id in surviving_set]
+            alpha_sum = sum(params.trust_weights.get(cid, 0.0) for cid in unmask.surviving)
+            if 0.0 < alpha_sum < 1.0:
+                secagg_weight_scale = 1.0 / alpha_sum
+        elif config.privacy.enabled and params is not None:
+            alpha_sum = sum(params.trust_weights.get(u.client_id, 0.0) for u in updates)
+            if 0.0 < alpha_sum < 1.0:
+                secagg_weight_scale = 1.0 / alpha_sum
 
-        try:
-            result = self._aggregator(run, config).aggregate(
-                RoundInput(
-                    run_id=run.run_id,
-                    round_id=round_.round_id,
-                    input_version=round_.input_model_version,
-                    input_key=round_.input_model_path,
-                    input_sha256=round_.input_model_sha256,
-                    updates=[
-                        UpdateRecord(
-                            u.update_id,
-                            u.client_id,
-                            u.model_version,
-                            u.num_samples,
-                            u.weights_path,
-                            u.checksum_sha256,
-                        )
-                        for u in updates
-                    ],
-                    min_participants=round_.min_participants,
-                    max_num_samples=config.rounds.max_num_samples,
-                    privacy_delta=config.privacy.enabled,
-                    secagg_enabled=secagg_active,
-                    secagg_self_seeds=secagg_self_seeds,
-                    secagg_dropped_keys=secagg_dropped_keys,
-                    secagg_surviving_public_keys=secagg_surviving_pks,
-                    cleanup_updates=config.privacy.enabled,
-                )
+        result = self._aggregator(
+            run, config
+        ).aggregate(
+            RoundInput(
+                run_id=run.run_id,
+                round_id=round_.round_id,
+                input_version=round_.input_model_version,
+                input_key=round_.input_model_path,
+                input_sha256=round_.input_model_sha256,
+                updates=[
+                    UpdateRecord(
+                        u.update_id,
+                        u.client_id,
+                        u.model_version,
+                        u.num_samples,
+                        u.weights_path,
+                        u.checksum_sha256,
+                    )
+                    for u in updates
+                ],
+                min_participants=round_.min_participants,
+                max_num_samples=config.rounds.max_num_samples,
+                privacy_delta=config.privacy.enabled,
+                secagg_enabled=secagg_active,
+                secagg_self_seeds=secagg_self_seeds,
+                secagg_dropped_keys=secagg_dropped_keys,
+                secagg_surviving_public_keys=secagg_surviving_pks,
+                secagg_weight_scale=secagg_weight_scale,
+                cleanup_updates=False,  # cleaned up after DB commit for crash-resume safety
             )
-        finally:
-            if secagg_active and params is not None:
-                self.secagg.cleanup_round(run.run_id, round_.round_id, params.selected)
+        )
         now = self.clock()
         by_update = {u.update_id: u for u in updates}
         for update_id, reason in result.rejected.items():
@@ -880,6 +918,7 @@ class Coordinator:
 
         if result.state is RoundState.FAILED:
             self._fail_round(round_, result.reason.value, result.detail, result)
+            self._cleanup_privacy_artifacts(run.run_id, round_.round_id, config, params)
             return Step.FAILED
 
         timing = {
@@ -923,7 +962,23 @@ class Coordinator:
             output_model_sha256=result.output_sha256,
             closed_at=now,
         )
+        self._cleanup_privacy_artifacts(run.run_id, round_.round_id, config, params)
         return Step.DONE
+
+    def _cleanup_privacy_artifacts(
+        self,
+        run_id: str,
+        round_id: int,
+        config: RunConfig,
+        params: RoundPrivacyParams | None,
+    ) -> None:
+        """Delete temporary uploads and ephemeral SecAgg keys/shares after the round commits."""
+        if not config.privacy.enabled:
+            return
+        for u in self.state.updates(run_id, round_id):
+            self.models.delete(u.weights_path)
+        if config.privacy.secagg_enabled and params is not None:
+            self.secagg.cleanup_round(run_id, round_id, params.selected)
 
     def _fail_round(
         self,

@@ -32,13 +32,40 @@ def main() -> int:
         action="store_true",
         help="persist state in PostgreSQL (CFL_DATABASE_URL, schema from alembic upgrade head)",
     )
+    parser.add_argument(
+        "--privacy",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="toggle the security/privacy layer on (--privacy) or off (--no-privacy)",
+    )
+    parser.add_argument(
+        "--no-secagg",
+        action="store_true",
+        help="when privacy is enabled, disable SecAgg+ masking (Clipping + DP only)",
+    )
+    parser.add_argument("--clip-norm", type=float, default=None, help="override privacy.clip_norm")
+    parser.add_argument(
+        "--base-noise-std", type=float, default=None, help="override privacy.base_noise_std"
+    )
     args = parser.parse_args()
 
     config = load_run_config(args.config if args.config.is_absolute() else REPO_ROOT / args.config)
+    raw = config.model_dump()
     if args.rounds is not None:
-        raw = config.model_dump()
         raw["rounds"]["num_rounds"] = args.rounds
-        config = type(config).model_validate(raw)
+    if args.privacy is True:
+        raw["privacy"]["enabled"] = True
+        raw["privacy"]["secagg_enabled"] = not args.no_secagg
+    elif args.privacy is False:
+        raw["privacy"]["enabled"] = False
+        raw["privacy"]["secagg_enabled"] = False
+    elif args.no_secagg:
+        raw["privacy"]["secagg_enabled"] = False
+    if args.clip_norm is not None:
+        raw["privacy"]["clip_norm"] = args.clip_norm
+    if args.base_noise_std is not None:
+        raw["privacy"]["base_noise_std"] = args.base_noise_std
+    config = type(config).model_validate(raw)
     models = FileModelStore(args.store) if args.store else InMemoryModelStore()
 
     state = None

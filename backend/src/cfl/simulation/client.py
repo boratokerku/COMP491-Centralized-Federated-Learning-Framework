@@ -190,6 +190,10 @@ class SimulatedClient:
                 if not status.ready:
                     return None
                 surviving_set, dropped_set = set(status.surviving), set(status.dropped)
+                if self.client_id not in surviving_set:
+                    self._finished.add((s.task.run_id, s.task.round_id))
+                    self._secagg = None
+                    return None
                 revealed = [
                     RevealedShare(
                         target_client_id=pid,
@@ -213,7 +217,7 @@ class SimulatedClient:
                 self._finished.add((s.task.run_id, s.task.round_id))
                 self._secagg = None
                 return None
-        except (ValueError, KeyError):
+        except (PermissionError, ValueError, KeyError):
             self._finished.add((s.task.run_id, s.task.round_id))
             self._secagg = None
         return None
