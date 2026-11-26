@@ -29,6 +29,7 @@ nothing about any seed.
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from enum import StrEnum
@@ -39,6 +40,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PublicKey,
 )
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.ciphers.modes import CTR
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -296,3 +298,53 @@ def reconstruct_secret(shares: list[ShamirShare]) -> bytes:
                 den = (den * (si.x - sj.x)) % p
         secret = (secret + si.y * num * pow(den, p - 2, p)) % p
     return secret.to_bytes(32, "big")
+
+
+# ---------------------------------------------------------------------------
+# 6. Peer-to-peer encrypted share relay (gateway cannot read shares)
+# ---------------------------------------------------------------------------
+
+
+def _derive_share_key(sk: X25519PrivateKey, peer_pk: X25519PublicKey, ctx: bytes) -> bytes:
+    return HKDF(
+        algorithm=SHA256(), length=32, salt=None, info=b"cfl-secagg-share-v1|" + ctx
+    ).derive(sk.exchange(peer_pk))
+
+
+def encrypt_peer_shares(
+    my_private_key: X25519PrivateKey,
+    peer_public_bytes: bytes,
+    ctx: bytes,
+    self_mask_share: ShamirShare,
+    mask_key_share: ShamirShare,
+) -> str:
+    """Encrypt a pair of Shamir shares for one peer with AES-256-GCM (AAD=ctx), returned as hex."""
+    key = _derive_share_key(my_private_key, public_key_from_bytes(peer_public_bytes), ctx)
+    nonce = os.urandom(12)
+    plaintext = json.dumps(
+        {
+            "self": {"x": self_mask_share.x, "y": format(self_mask_share.y, "x")},
+            "key": {"x": mask_key_share.x, "y": format(mask_key_share.y, "x")},
+        },
+        separators=(",", ":"),
+    ).encode()
+    ciphertext = AESGCM(key).encrypt(nonce, plaintext, ctx)
+    return (nonce + ciphertext).hex()
+
+
+def decrypt_peer_shares(
+    my_private_key: X25519PrivateKey,
+    sender_public_bytes: bytes,
+    ctx: bytes,
+    ciphertext_hex: str,
+) -> tuple[ShamirShare, ShamirShare]:
+    """Decrypt `(self_mask_share, mask_key_share)` sent by a peer for this round."""
+    raw = bytes.fromhex(ciphertext_hex)
+    if len(raw) < 28:  # 12-byte nonce + 16-byte GCM tag minimum
+        raise ValueError("encrypted share payload is too short")
+    nonce, body = raw[:12], raw[12:]
+    key = _derive_share_key(my_private_key, public_key_from_bytes(sender_public_bytes), ctx)
+    data = json.loads(AESGCM(key).decrypt(nonce, body, ctx))
+    self_share = ShamirShare(x=int(data["self"]["x"]), y=int(data["self"]["y"], 16))
+    key_share = ShamirShare(x=int(data["key"]["x"]), y=int(data["key"]["y"], 16))
+    return self_share, key_share

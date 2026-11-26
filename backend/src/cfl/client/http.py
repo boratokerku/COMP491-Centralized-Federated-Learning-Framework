@@ -31,8 +31,13 @@ from cfl.protocol.messages import (
     ManifestSummary,
     RegisterRequest,
     RegisterResponse,
+    RoundKeysResponse,
+    RoundKeySubmit,
     TaskAssignment,
     TransferReport,
+    UnmaskSharesRequest,
+    UnmaskSharesResponse,
+    UnmaskStatusResponse,
     UpdateAck,
     UpdateMetadata,
 )
@@ -302,3 +307,49 @@ class HttpTransport(Transport):
         if response.status_code != 200:
             raise _error(response)
         return (time.perf_counter() - start) * 1000
+
+    # -- SecAgg+ key exchange & unmasking -------------------------------------------------------
+    def submit_round_keys(self, submit: RoundKeySubmit) -> RoundKeysResponse:
+        response = self._request(
+            "secagg_keys",
+            "POST",
+            f"/rounds/{submit.round_id}/keys",
+            json=submit.model_dump(mode="json"),
+        )
+        if response.status_code != 200:
+            raise _error(response)
+        return RoundKeysResponse.model_validate(response.json())
+
+    def get_round_keys(self, run_id: str, round_id: int, client_id: str) -> RoundKeysResponse:
+        """`client_id` is implied by the token; kept for the Transport interface."""
+        response = self._request(
+            "secagg_keys",
+            "GET",
+            f"/rounds/{round_id}/keys",
+            params={"run_id": run_id},
+        )
+        if response.status_code != 200:
+            raise _error(response)
+        return RoundKeysResponse.model_validate(response.json())
+
+    def get_unmask_status(self, run_id: str, round_id: int, client_id: str) -> UnmaskStatusResponse:
+        response = self._request(
+            "secagg_unmask",
+            "GET",
+            f"/rounds/{round_id}/unmask",
+            params={"run_id": run_id},
+        )
+        if response.status_code != 200:
+            raise _error(response)
+        return UnmaskStatusResponse.model_validate(response.json())
+
+    def submit_unmask_shares(self, req: UnmaskSharesRequest) -> UnmaskSharesResponse:
+        response = self._request(
+            "secagg_unmask",
+            "POST",
+            f"/rounds/{req.round_id}/unmask",
+            json=req.model_dump(mode="json"),
+        )
+        if response.status_code != 200:
+            raise _error(response)
+        return UnmaskSharesResponse.model_validate(response.json())
