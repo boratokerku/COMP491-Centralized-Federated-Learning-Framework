@@ -44,6 +44,7 @@ from cfl.core.strategy import (
 
 # ========================== helpers ==========================
 
+
 def _make_weights(seed: int = 0) -> dict[str, torch.Tensor]:
     rng = torch.Generator().manual_seed(seed)
     return {
@@ -210,14 +211,10 @@ class TestPairwiseMasking:
         keypairs = {cid: KeyPair.generate() for cid in ids}
         peer_keys = {cid: kp.public_bytes for cid, kp in keypairs.items()}
 
-        deltas = {
-            cid: {"w": torch.randint(0, 1000, (5,), dtype=torch.int64)}
-            for cid in ids
-        }
+        deltas = {cid: {"w": torch.randint(0, 1000, (5,), dtype=torch.int64)} for cid in ids}
 
         masked = {
-            cid: apply_masks(deltas[cid], cid, keypairs[cid], ids, peer_keys, ctx)
-            for cid in ids
+            cid: apply_masks(deltas[cid], cid, keypairs[cid], ids, peer_keys, ctx) for cid in ids
         }
 
         m = DEFAULT_MODULUS
@@ -291,10 +288,8 @@ class TestDeltaSum:
 class TestDynamicTrustWeights:
     def test_uniform_clients_get_equal_weights(self):
         stats = [
-            ClientStats("c1", rounds_participated=10, rounds_selected=10,
-                        on_time_deliveries=10),
-            ClientStats("c2", rounds_participated=10, rounds_selected=10,
-                        on_time_deliveries=10),
+            ClientStats("c1", rounds_participated=10, rounds_selected=10, on_time_deliveries=10),
+            ClientStats("c2", rounds_participated=10, rounds_selected=10, on_time_deliveries=10),
         ]
         weights = compute_dynamic_trust_weights(stats)
         assert weights["c1"] == pytest.approx(0.5)
@@ -302,32 +297,37 @@ class TestDynamicTrustWeights:
 
     def test_weights_sum_to_one(self):
         stats = [
-            ClientStats("c1", rounds_participated=8, rounds_selected=10,
-                        on_time_deliveries=6),
-            ClientStats("c2", rounds_participated=10, rounds_selected=10,
-                        on_time_deliveries=10),
-            ClientStats("c3", rounds_participated=5, rounds_selected=10,
-                        on_time_deliveries=4),
+            ClientStats("c1", rounds_participated=8, rounds_selected=10, on_time_deliveries=6),
+            ClientStats("c2", rounds_participated=10, rounds_selected=10, on_time_deliveries=10),
+            ClientStats("c3", rounds_participated=5, rounds_selected=10, on_time_deliveries=4),
         ]
         weights = compute_dynamic_trust_weights(stats)
         assert sum(weights.values()) == pytest.approx(1.0)
 
     def test_better_client_gets_higher_weight(self):
         stats = [
-            ClientStats("good", rounds_participated=10, rounds_selected=10,
-                        on_time_deliveries=10),
-            ClientStats("bad", rounds_participated=3, rounds_selected=10,
-                        on_time_deliveries=1),
+            ClientStats("good", rounds_participated=10, rounds_selected=10, on_time_deliveries=10),
+            ClientStats("bad", rounds_participated=3, rounds_selected=10, on_time_deliveries=1),
         ]
         weights = compute_dynamic_trust_weights(stats)
         assert weights["good"] > weights["bad"]
 
     def test_validation_instability_lowers_weight(self):
         stats = [
-            ClientStats("stable", rounds_participated=10, rounds_selected=10,
-                        on_time_deliveries=10, val_metrics=[0.5, 0.5, 0.5, 0.5]),
-            ClientStats("erratic", rounds_participated=10, rounds_selected=10,
-                        on_time_deliveries=10, val_metrics=[0.1, 0.9, 0.2, 0.8]),
+            ClientStats(
+                "stable",
+                rounds_participated=10,
+                rounds_selected=10,
+                on_time_deliveries=10,
+                val_metrics=[0.5, 0.5, 0.5, 0.5],
+            ),
+            ClientStats(
+                "erratic",
+                rounds_participated=10,
+                rounds_selected=10,
+                on_time_deliveries=10,
+                val_metrics=[0.1, 0.9, 0.2, 0.8],
+            ),
         ]
         weights = compute_dynamic_trust_weights(stats)
         assert weights["stable"] > weights["erratic"]
@@ -399,9 +399,7 @@ def _setup_round(ids, size=6, seed=0):
     keypairs = {cid: KeyPair.generate() for cid in ids}
     pub = {cid: kp.public_bytes for cid, kp in keypairs.items()}
     self_seeds = {cid: generate_self_mask_seed() for cid in ids}
-    raw = {
-        cid: quantize_state_dict({"w": torch.randn(size, generator=rng) * 0.1}) for cid in ids
-    }
+    raw = {cid: quantize_state_dict({"w": torch.randn(size, generator=rng) * 0.1}) for cid in ids}
     masked = {
         cid: apply_masks(raw[cid], cid, keypairs[cid], ids, pub, ctx, self_seeds[cid])
         for cid in ids

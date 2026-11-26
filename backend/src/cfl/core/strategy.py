@@ -132,10 +132,10 @@ class ClientStats:
     """
 
     client_id: str
-    rounds_participated: int = 0       # rounds where the client delivered an update
-    rounds_selected: int = 0           # rounds where the client was selected
-    on_time_deliveries: int = 0        # updates delivered before the deadline
-    total_num_samples: int = 0         # sum of reported num_samples over all rounds
+    rounds_participated: int = 0  # rounds where the client delivered an update
+    rounds_selected: int = 0  # rounds where the client was selected
+    on_time_deliveries: int = 0  # updates delivered before the deadline
+    total_num_samples: int = 0  # sum of reported num_samples over all rounds
     val_metrics: list[float] = field(default_factory=list)  # client-reported val loss history
 
 
