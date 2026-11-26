@@ -46,6 +46,40 @@ const docs = [
   },
 ];
 
+const alwaysOn = [
+  ["Data stays local", "Clients train on their own data. They send model updates to the server, not raw records."],
+  ["Encrypted transport", "Clients connect to the gateway over HTTPS only, and each one authenticates with its own token."],
+  ["Checked model files", "Weights are exchanged as safetensors files with a SHA-256 checksum. Nothing received over the network is unpickled."],
+];
+
+const optional = [
+  {
+    title: "Clipping and noise",
+    text: "Before uploading, a client limits the size (L2 norm) of its model change and adds Gaussian noise. The noise per client gets smaller as more clients are selected. In this mode, updates are weighted by a trust score instead of by sample count. The score uses participation, on-time delivery, reported sample counts and the stability of reported validation loss.",
+  },
+  {
+    title: "Secure aggregation (SecAgg+)",
+    text: "Builds on clipping and noise. Each client masks its update before uploading, and the masks are removed only from the combined sum. If some clients drop out, the round can still be unmasked as long as enough of the others stay to meet the recovery threshold. The design follows Bonawitz et al. (CCS 2017).",
+  },
+  {
+    title: "Mutual TLS (mTLS)",
+    text: "The client gateway also asks each client for a certificate signed by the project\u2019s own certificate authority. The name in the certificate must match the client that owns the token. The website keeps using normal HTTPS.",
+  },
+];
+
+const limits = [
+  "The added noise does not come with a formal differential privacy guarantee: no privacy budget (\u03b5) is calculated.",
+  "Without secure aggregation, the server can see each client\u2019s clipped and noisy update.",
+  "Client public keys used by secure aggregation are not signed. The protection assumes that the server passes them on unchanged.",
+  "With secure aggregation, the server cannot sanity-check updates one by one. It checks the combined model, and a masked update that fails validation fails the whole round.",
+];
+
+const securityLinks = [
+  { label: "Protocol in the API specification", href: blob("planning/api-spec.md") },
+  { label: "Example privacy run config", href: blob("backend/configs/sim_tabular_privacy.yaml") },
+  { label: "mTLS certificate script", href: blob("deploy/scripts/mtls_certs.sh") },
+];
+
 export default function Docs() {
   return (
     <div className="space-y-8">
@@ -70,6 +104,51 @@ export default function Docs() {
           </Card>
         ))}
       </div>
+
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold">Security and privacy</h2>
+          <p className="max-w-4xl text-sm text-muted">What protects a training run, and where that protection ends.</p>
+        </div>
+
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted">Always on</h3>
+        <div className="grid gap-4 sm:grid-cols-3">
+          {alwaysOn.map(([title, text]) => (
+            <Card key={title}>
+              <h4 className="font-semibold">{title}</h4>
+              <p className="mt-1 text-sm text-muted">{text}</p>
+            </Card>
+          ))}
+        </div>
+
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted">Optional, off by default</h3>
+        <div className="grid gap-4 sm:grid-cols-3">
+          {optional.map((o) => (
+            <Card key={o.title}>
+              <h4 className="font-semibold">{o.title}</h4>
+              <p className="mt-1 text-sm text-muted">{o.text}</p>
+            </Card>
+          ))}
+        </div>
+
+        <Card>
+          <h3 className="font-semibold">Limits</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted">
+            {limits.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+          <ul className="mt-4 space-y-1 text-sm">
+            {securityLinks.map((l) => (
+              <li key={l.href}>
+                <a href={l.href} className="text-accent hover:underline">
+                  {l.label} &rarr;
+                </a>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </section>
     </div>
   );
 }
