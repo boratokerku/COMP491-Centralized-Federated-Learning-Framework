@@ -115,10 +115,12 @@ class _SecAggSession:
     quantized: dict[str, torch.Tensor]
     keypair: KeyPair
     self_seed: bytes
-    stage: str = "keys_submitted"  # keys_submitted -> shares_submitted -> unmasking
+    stage: str = "keys_submitted"  # keys_submitted -> shares_submitted -> uploading -> unmasking
     peer_ids: list[str] = field(default_factory=list)
     peer_pks: dict[str, bytes] = field(default_factory=dict)
     peer_shares: dict[str, tuple[ShamirShare, ShamirShare]] = field(default_factory=dict)
+    pending_meta: UpdateMetadata | None = None
+    pending_weights: bytes | None = None
 
 
 class ClientRuntime:
@@ -349,14 +351,19 @@ class ClientRuntime:
             quantized = quantize_state_dict(payload_dict)
             kp = KeyPair.generate()
             self_seed = generate_self_mask_seed()
-            self.transport.submit_round_keys(
-                RoundKeySubmit(
-                    run_id=task.run_id,
-                    round_id=task.round_id,
-                    client_id=self.client_id,
-                    public_key_hex=kp.public_bytes.hex(),
+            try:
+                self.transport.submit_round_keys(
+                    RoundKeySubmit(
+                        run_id=task.run_id,
+                        round_id=task.round_id,
+                        client_id=self.client_id,
+                        public_key_hex=kp.public_bytes.hex(),
+                    )
                 )
-            )
+            except (GatewayHTTPError, ValueError, KeyError) as exc:
+                self.log(f"round {task.round_id}: SecAgg+ key submit refused ({exc})")
+                self._finish_secagg_round(task)
+                return
             self._secagg = _SecAggSession(
                 task=task,
                 metrics=metrics,
@@ -452,9 +459,31 @@ class ClientRuntime:
                     metrics=s.metrics,
                 )
                 self._write_pending(meta, weights)
+                s.pending_meta = meta
+                s.pending_weights = weights
+                s.stage = "uploading"
                 decided, accepted = self._upload_with_status(meta, weights, mark_round_done=False)
                 if not decided:
                     return False
+                s.pending_meta = None
+                s.pending_weights = None
+                if not accepted:
+                    self._finish_secagg_round(s.task)
+                    return True
+                s.stage = "unmasking"
+                return True
+
+            if s.stage == "uploading":
+                if s.pending_meta is None or s.pending_weights is None:
+                    self._finish_secagg_round(s.task)
+                    return True
+                decided, accepted = self._upload_with_status(
+                    s.pending_meta, s.pending_weights, mark_round_done=False
+                )
+                if not decided:
+                    return False
+                s.pending_meta = None
+                s.pending_weights = None
                 if not accepted:
                     self._finish_secagg_round(s.task)
                     return True

@@ -40,6 +40,8 @@ artifacts/
 # Deployment secrets and per-site client files
 deploy/client/token.txt
 deploy/client/ca/
+deploy/mtls/*
+!deploy/mtls/.gitkeep
 cfl-client-*.tar.gz*
 deploy/client/client.yaml
 deploy/client/state/
