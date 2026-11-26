@@ -161,11 +161,13 @@ def compute_dynamic_trust_weights(
 
     raw_scores: dict[str, float] = {}
     for cs in client_stats:
-        # Participation rate
-        p_rate = cs.rounds_participated / max(cs.rounds_selected, 1)
+        # Neutral prior (1.0) for brand-new clients with no prior round history.
+        p_rate = 1.0 if cs.rounds_selected == 0 else cs.rounds_participated / cs.rounds_selected
 
         # On-time ratio
-        ot_rate = cs.on_time_deliveries / max(cs.rounds_participated, 1)
+        ot_rate = (
+            1.0 if cs.rounds_participated == 0 else cs.on_time_deliveries / cs.rounds_participated
+        )
 
         # Sample-count consistency (1.0 when within expected range)
         if max_num_samples and cs.rounds_participated > 0:
@@ -185,7 +187,8 @@ def compute_dynamic_trust_weights(
         else:
             val_stab = 1.0  # not enough data to judge; assume good
 
-        raw_scores[cs.client_id] = p_rate * ot_rate * sc_rate * val_stab
+        # Small positive floor so selected clients always satisfy 0 < alpha <= 1.
+        raw_scores[cs.client_id] = max(1e-3, p_rate * ot_rate * sc_rate * val_stab)
 
     # Softmax-style normalisation to Σ = 1.
     total = sum(raw_scores.values())

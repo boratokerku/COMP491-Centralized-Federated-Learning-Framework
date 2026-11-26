@@ -245,6 +245,17 @@ class UnmaskSharesResponse(BaseModel):
     reason: str | None = None
 
 
+class UnmaskStatusResponse(BaseModel):
+    """Tells surviving clients whether unmasking has started and which peers survived/dropped."""
+
+    run_id: str
+    round_id: int = Field(ge=1)
+    ready: bool
+    surviving: list[str] = Field(default_factory=list)
+    dropped: list[str] = Field(default_factory=list)
+    deadline: datetime | None = None
+
+
 class UpdateMetadata(BaseModel):
     run_id: str
     round_id: int
