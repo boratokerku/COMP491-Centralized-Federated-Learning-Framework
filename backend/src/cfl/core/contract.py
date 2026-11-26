@@ -105,6 +105,33 @@ class ModelContract:
             if not torch.isfinite(tensor).all():
                 raise ContractViolation("non_finite_weights", f"{name} contains NaN or Inf")
 
+    def check_quantized(self, weights: StateDict, modulus: int) -> None:
+        """Validate a quantized/masked SecAgg upload: exact names & shapes, int64 in [0, M)."""
+        expected = {p.name: p for p in self.params}
+        missing = sorted(expected.keys() - weights.keys())
+        extra = sorted(weights.keys() - expected.keys())
+        if missing or extra:
+            raise ContractViolation(
+                "model_shape_mismatch", f"missing parameters {missing}, extra parameters {extra}"
+            )
+        for name, spec in expected.items():
+            tensor = weights[name]
+            if tuple(tensor.shape) != spec.shape:
+                raise ContractViolation(
+                    "model_shape_mismatch",
+                    f"{name} has shape {tuple(tensor.shape)}, expected {spec.shape}",
+                )
+            if tensor.dtype is not torch.int64:
+                raise ContractViolation(
+                    "model_shape_mismatch",
+                    f"{name} has dtype {tensor.dtype}, expected torch.int64 for SecAgg upload",
+                )
+            if not bool(((tensor >= 0) & (tensor < modulus)).all()):
+                raise ContractViolation(
+                    "sanity_check_failed",
+                    f"{name} has values outside [0, {modulus})",
+                )
+
 
 def initial_weights(build_model: Callable[[], torch.nn.Module], seed: int) -> StateDict:
     """Global model v0. Created once by the server with a fixed seed; clients never initialize."""
