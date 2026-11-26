@@ -12,7 +12,12 @@ from abc import ABC, abstractmethod
 from cfl.protocol.messages import (
     RegisterRequest,
     RegisterResponse,
+    RoundKeysResponse,
+    RoundKeySubmit,
     TaskAssignment,
+    UnmaskSharesRequest,
+    UnmaskSharesResponse,
+    UnmaskStatusResponse,
     UpdateAck,
     UpdateMetadata,
 )
@@ -36,3 +41,16 @@ class Transport(ABC):
     def download_final_artifact(self, run_id: str) -> tuple[dict[str, bytes], str] | None:
         """The final model artifact files and the server-published SHA-256 of model.onnx, or
         None while the run is not completed (GET /model/{run_id}/final)."""
+
+    # -- Optional SecAgg+ key exchange & unmasking (implemented by HTTP and in-memory transports)
+    def submit_round_keys(self, submit: RoundKeySubmit) -> RoundKeysResponse:
+        raise NotImplementedError("transport does not support SecAgg+ key exchange")
+
+    def get_round_keys(self, run_id: str, round_id: int, client_id: str) -> RoundKeysResponse:
+        raise NotImplementedError("transport does not support SecAgg+ key exchange")
+
+    def get_unmask_status(self, run_id: str, round_id: int, client_id: str) -> UnmaskStatusResponse:
+        raise NotImplementedError("transport does not support SecAgg+ unmasking")
+
+    def submit_unmask_shares(self, req: UnmaskSharesRequest) -> UnmaskSharesResponse:
+        raise NotImplementedError("transport does not support SecAgg+ unmasking")
