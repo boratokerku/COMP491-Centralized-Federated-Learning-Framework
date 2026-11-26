@@ -20,7 +20,7 @@ rounds:
   client_fraction: 1.0      # random subset of eligible clients per round (seeded)
   min_participants: 3
   round_deadline_s: 120
-  max_num_samples: 10000    # reject updates that report more samples than any client holds
+  max_num_samples: 25000    # reject updates that report more samples than any client holds (incl. label_skew)
 
 client:
   local_epochs: 1
