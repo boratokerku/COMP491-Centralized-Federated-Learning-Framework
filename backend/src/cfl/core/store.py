@@ -25,6 +25,10 @@ class ModelStore(ABC):
     @abstractmethod
     def exists(self, key: str) -> bool: ...
 
+    @abstractmethod
+    def delete(self, key: str) -> None:
+        """Delete `key` if it exists (idempotent no-op if already absent)."""
+
 
 def _check_key(key: str) -> PurePosixPath:
     path = PurePosixPath(key)
@@ -48,6 +52,10 @@ class InMemoryModelStore(ModelStore):
     def exists(self, key: str) -> bool:
         _check_key(key)
         return key in self._files
+
+    def delete(self, key: str) -> None:
+        _check_key(key)
+        self._files.pop(key, None)
 
 
 class FileModelStore(ModelStore):
@@ -83,3 +91,6 @@ class FileModelStore(ModelStore):
 
     def exists(self, key: str) -> bool:
         return self._path(key).is_file()
+
+    def delete(self, key: str) -> None:
+        self._path(key).unlink(missing_ok=True)

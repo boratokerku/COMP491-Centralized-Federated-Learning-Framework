@@ -1,0 +1,36 @@
+# Run config for local simulation on UCI SMS Spam Collection with the Privacy Extension enabled
+# (FedProx + L2 Clipping + Client-Count-Aware Local DP + Pairwise SecAgg+ + Dynamic Trust α_i).
+run:
+  name: sim-text-fedprox-privacy
+  seed: 42
+  mode: simulation
+
+task:
+  name: text
+  data_dir: data/text
+  num_clients: 4
+  partition: iid
+
+strategy:
+  name: fedprox
+  mu: 0.01
+
+rounds:
+  num_rounds: 20
+  client_fraction: 1.0
+  min_participants: 3
+  round_deadline_s: 120
+  max_num_samples: 2000
+
+client:
+  local_epochs: 1
+  batch_size: 64
+  learning_rate: 0.01
+  class_weights: [1.0, 5.0]
+
+privacy:
+  enabled: true
+  clip_norm: 2.0
+  base_noise_std: 0.005
+  secagg_enabled: true
+  min_recovery_ratio: 0.67

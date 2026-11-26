@@ -1,0 +1,34 @@
+# Mutual TLS (mTLS) Caddyfile for the Secured Channel (Faz 5).
+# Enable in deploy/.env with:
+#   CFL_CADDYFILE=./Caddyfile.mtls
+#   CFL_REQUIRE_MTLS=true
+# Generate the client CA and per-client certs with: deploy/scripts/mtls_certs.sh
+#
+# Only the client gateway requires a verified client certificate; browsers on CFL_WEB_DOMAIN
+# keep normal HTTPS.
+
+{$CFL_GATEWAY_DOMAIN} {
+	tls {
+		client_auth {
+			mode require_and_verify
+			trust_pool file {
+				pem_file /etc/caddy/mtls/ca.crt
+			}
+		}
+	}
+	request_body {
+		max_size 64MB
+	}
+	reverse_proxy gateway:8000 {
+		header_up X-Client-Cert-Subject {http.request.tls.client.subject}
+	}
+}
+
+{$CFL_WEB_DOMAIN} {
+	handle /grafana* {
+		reverse_proxy grafana:3000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

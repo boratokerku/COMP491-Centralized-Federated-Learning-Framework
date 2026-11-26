@@ -28,14 +28,38 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import torch
+
 from cfl.client.http import GatewayHTTPError, GatewayUnavailable
 from cfl.core.artifact import verify_artifact
 from cfl.core.contract import ModelContract
+from cfl.core.privacy import add_dp_noise, clip_delta, quantize_state_dict, scale_by_trust
+from cfl.core.secagg import (
+    KeyPair,
+    ShamirShare,
+    ShareKind,
+    apply_masks,
+    decrypt_peer_shares,
+    encrypt_peer_shares,
+    generate_self_mask_seed,
+    private_key_to_bytes,
+    round_context,
+    share_to_reveal,
+    split_secret,
+)
 from cfl.core.serialization import bytes_to_state_dict, sha256, state_dict_to_bytes
 from cfl.core.task import TaskSpec
 from cfl.core.transport import Transport
 from cfl.protocol import PROTOCOL_VERSION
-from cfl.protocol.messages import RegisterRequest, TaskAssignment, UpdateMetadata
+from cfl.protocol.messages import (
+    RegisterRequest,
+    RevealedShare,
+    RoundKeySubmit,
+    ShamirSharePayload,
+    TaskAssignment,
+    UnmaskSharesRequest,
+    UpdateMetadata,
+)
 
 # Upload answers after which the update must not be sent again.
 FINAL_REJECTIONS = frozenset(
@@ -82,6 +106,23 @@ class _State:
     finals_verified: list[str] = field(default_factory=list)
 
 
+@dataclass
+class _SecAggSession:
+    """In-flight per-round SecAgg+ state, advanced cooperatively one stage per step()."""
+
+    task: TaskAssignment
+    metrics: dict[str, float]
+    quantized: dict[str, torch.Tensor]
+    keypair: KeyPair
+    self_seed: bytes
+    stage: str = "keys_submitted"  # keys_submitted -> shares_submitted -> uploading -> unmasking
+    peer_ids: list[str] = field(default_factory=list)
+    peer_pks: dict[str, bytes] = field(default_factory=dict)
+    peer_shares: dict[str, tuple[ShamirShare, ShamirShare]] = field(default_factory=dict)
+    pending_meta: UpdateMetadata | None = None
+    pending_weights: bytes | None = None
+
+
 class ClientRuntime:
     def __init__(
         self,
@@ -114,6 +155,7 @@ class ClientRuntime:
         self._setup_reported: set[str] = set()
         self._retries_counted = 0
         self.manifest_version: str | None = None
+        self._secagg: _SecAggSession | None = None
 
     # -- persistence ------------------------------------------------------------------------------
     @property
@@ -231,6 +273,9 @@ class ClientRuntime:
     def step(self) -> bool:
         """One polling cycle. Returns True when it did something (so the caller polls again
         immediately)."""
+        if self._secagg is not None:
+            return self._advance_secagg()
+
         for meta, weights in self._pending():
             return self._upload(meta, weights)  # undecided: wait a poll interval, then resend
 
@@ -243,6 +288,30 @@ class ClientRuntime:
         return self._fetch_finished_runs()
 
     # -- one round --------------------------------------------------------------------------------
+    def _apply_privacy(
+        self,
+        task: TaskAssignment,
+        local_weights: dict[str, torch.Tensor],
+        global_weights: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]:
+        """Apply Clip + calibrated Local DP + trust-weight scaling when privacy is enabled."""
+        privacy_active = any(
+            v is not None
+            for v in (task.clip_norm, task.sigma_t, task.trust_weight, task.secagg_threshold)
+        )
+        if not privacy_active:
+            return local_weights
+        if task.clip_norm is not None:
+            delta = clip_delta(local_weights, global_weights, task.clip_norm)
+        else:
+            delta = {k: local_weights[k] - global_weights[k] for k in local_weights}
+        if task.sigma_t is not None and task.sigma_t > 0:
+            rng = torch.Generator().manual_seed(self.seed * 100_003 + task.round_id + 17)
+            delta = add_dp_noise(delta, task.sigma_t, rng)
+        if task.trust_weight is not None:
+            delta = scale_by_trust(delta, task.trust_weight)
+        return delta
+
     def _train_and_upload(self, task: TaskAssignment) -> None:
         self.log(
             f"round {task.round_id} of run {task.run_id[:8]}: training on v{task.model_version}"
@@ -270,7 +339,42 @@ class ClientRuntime:
         metrics |= {f"val_{k}_before": v for k, v in before.items()}
         metrics |= {f"val_{k}_after": v for k, v in after.items()}
         metrics |= self._transfer_metrics()
-        weights = state_dict_to_bytes(model.state_dict())
+
+        payload_dict = self._apply_privacy(task, model.state_dict(), global_weights)
+
+        if task.run_id in self.state.runs:  # keep the latest run last
+            self.state.runs.remove(task.run_id)
+        self.state.runs.append(task.run_id)
+        self._save_state()
+
+        if task.secagg_threshold is not None:
+            quantized = quantize_state_dict(payload_dict)
+            kp = KeyPair.generate()
+            self_seed = generate_self_mask_seed()
+            try:
+                self.transport.submit_round_keys(
+                    RoundKeySubmit(
+                        run_id=task.run_id,
+                        round_id=task.round_id,
+                        client_id=self.client_id,
+                        public_key_hex=kp.public_bytes.hex(),
+                    )
+                )
+            except (GatewayHTTPError, ValueError, KeyError) as exc:
+                self.log(f"round {task.round_id}: SecAgg+ key submit refused ({exc})")
+                self._finish_secagg_round(task)
+                return
+            self._secagg = _SecAggSession(
+                task=task,
+                metrics=metrics,
+                quantized=quantized,
+                keypair=kp,
+                self_seed=self_seed,
+            )
+            self._advance_secagg()
+            return
+
+        weights = state_dict_to_bytes(payload_dict)
         meta = UpdateMetadata(
             run_id=task.run_id,
             round_id=task.round_id,
@@ -282,32 +386,182 @@ class ClientRuntime:
             metrics=metrics,
         )
         self._write_pending(meta, weights)  # from here on a crash resends this exact update
-        if task.run_id in self.state.runs:  # keep the latest run last
-            self.state.runs.remove(task.run_id)
-        self.state.runs.append(task.run_id)
-        self._save_state()
         self._upload(meta, weights)
+
+    def _advance_secagg(self) -> bool:
+        """Advance an in-flight SecAgg+ session by one stage; False while waiting on peers."""
+        s = self._secagg
+        if s is None:
+            return False
+        ctx = round_context(s.task.run_id, s.task.round_id)
+        try:
+            if s.stage == "keys_submitted":
+                resp = self.transport.get_round_keys(s.task.run_id, s.task.round_id, self.client_id)
+                if not resp.ready:
+                    return False
+                s.peer_ids = sorted(p.client_id for p in resp.peers)
+                s.peer_pks = {p.client_id: p.public_key_bytes() for p in resp.peers}
+                n = len(s.peer_ids)
+                k = resp.secagg_threshold
+                self_shares = split_secret(s.self_seed, n, k)
+                key_shares = split_secret(private_key_to_bytes(s.keypair.private_key), n, k)
+                encrypted: dict[str, str] = {}
+                for idx, peer_id in enumerate(s.peer_ids):
+                    if peer_id == self.client_id:
+                        s.peer_shares[self.client_id] = (self_shares[idx], key_shares[idx])
+                    else:
+                        encrypted[peer_id] = encrypt_peer_shares(
+                            s.keypair.private_key,
+                            s.peer_pks[peer_id],
+                            ctx,
+                            self_shares[idx],
+                            key_shares[idx],
+                        )
+                self.transport.submit_round_keys(
+                    RoundKeySubmit(
+                        run_id=s.task.run_id,
+                        round_id=s.task.round_id,
+                        client_id=self.client_id,
+                        public_key_hex=s.keypair.public_bytes.hex(),
+                        encrypted_shares=encrypted,
+                    )
+                )
+                self._report_transfer(s.task.run_id, s.task.round_id, "secagg_keys")
+                s.stage = "shares_submitted"
+                return True
+
+            if s.stage == "shares_submitted":
+                resp = self.transport.get_round_keys(s.task.run_id, s.task.round_id, self.client_id)
+                if len(resp.incoming_shares) < len(s.peer_ids) - 1:
+                    return False
+                for sender_id, blob_hex in resp.incoming_shares.items():
+                    s.peer_shares[sender_id] = decrypt_peer_shares(
+                        s.keypair.private_key, s.peer_pks[sender_id], ctx, blob_hex
+                    )
+                masked = apply_masks(
+                    s.quantized,
+                    self.client_id,
+                    s.keypair,
+                    s.peer_ids,
+                    s.peer_pks,
+                    ctx,
+                    s.self_seed,
+                )
+                weights = state_dict_to_bytes(masked)
+                meta = UpdateMetadata(
+                    run_id=s.task.run_id,
+                    round_id=s.task.round_id,
+                    client_id=self.client_id,
+                    update_id=str(uuid.uuid4()),
+                    model_version=s.task.model_version,
+                    num_samples=len(self.train_data[1]),
+                    checksum_sha256=sha256(weights),
+                    metrics=s.metrics,
+                )
+                self._write_pending(meta, weights)
+                s.pending_meta = meta
+                s.pending_weights = weights
+                s.stage = "uploading"
+                decided, accepted = self._upload_with_status(meta, weights, mark_round_done=False)
+                if not decided:
+                    return False
+                s.pending_meta = None
+                s.pending_weights = None
+                if not accepted:
+                    self._finish_secagg_round(s.task)
+                    return True
+                s.stage = "unmasking"
+                return True
+
+            if s.stage == "uploading":
+                if s.pending_meta is None or s.pending_weights is None:
+                    self._finish_secagg_round(s.task)
+                    return True
+                decided, accepted = self._upload_with_status(
+                    s.pending_meta, s.pending_weights, mark_round_done=False
+                )
+                if not decided:
+                    return False
+                s.pending_meta = None
+                s.pending_weights = None
+                if not accepted:
+                    self._finish_secagg_round(s.task)
+                    return True
+                s.stage = "unmasking"
+                return True
+
+            if s.stage == "unmasking":
+                status = self.transport.get_unmask_status(
+                    s.task.run_id, s.task.round_id, self.client_id
+                )
+                if not status.ready:
+                    return False
+                surviving_set, dropped_set = set(status.surviving), set(status.dropped)
+                revealed: list[RevealedShare] = []
+                for peer_id in sorted(s.peer_shares):
+                    kind = share_to_reveal(peer_id, surviving_set, dropped_set)
+                    self_share, key_share = s.peer_shares[peer_id]
+                    chosen = self_share if kind is ShareKind.SELF_MASK else key_share
+                    revealed.append(
+                        RevealedShare(
+                            target_client_id=peer_id,
+                            kind=kind.value,
+                            share=ShamirSharePayload.from_share(chosen),
+                        )
+                    )
+                self.transport.submit_unmask_shares(
+                    UnmaskSharesRequest(
+                        run_id=s.task.run_id,
+                        round_id=s.task.round_id,
+                        client_id=self.client_id,
+                        shares=revealed,
+                    )
+                )
+                self._report_transfer(s.task.run_id, s.task.round_id, "secagg_unmask")
+                self.log(f"round {s.task.round_id}: SecAgg+ unmask shares submitted")
+                self._finish_secagg_round(s.task)
+                return True
+        except (GatewayHTTPError, ValueError, KeyError) as exc:
+            self.log(f"round {s.task.round_id}: SecAgg+ session ended ({exc})")
+            self._finish_secagg_round(s.task)
+            return True
+        return False
+
+    def _finish_secagg_round(self, task: TaskAssignment) -> None:
+        self._secagg = None
+        if [task.run_id, task.round_id] not in self.state.rounds_done:
+            self.state.rounds_done.append([task.run_id, task.round_id])
+            self._save_state()
 
     def _upload(self, meta: UpdateMetadata, weights: bytes) -> bool:
         """Send the update; True once the gateway has decided (accepted or finally rejected)."""
+        decided, _ = self._upload_with_status(meta, weights, mark_round_done=True)
+        return decided
+
+    def _upload_with_status(
+        self, meta: UpdateMetadata, weights: bytes, *, mark_round_done: bool
+    ) -> tuple[bool, bool]:
+        """Return `(decided, accepted)` for an update upload."""
         try:
             ack = self.transport.upload_update(meta, weights)
         except GatewayHTTPError as exc:  # e.g. identity_mismatch: resending cannot help
             self.log(f"update {meta.update_id[:8]} refused: {exc}")
             ack = None
-        if ack is not None and ack.accepted:
+        accepted = bool(ack is not None and ack.accepted)
+        if accepted:
             self._report_transfer(meta.run_id, meta.round_id, "update_upload")
             note = " (retry acknowledged)" if ack.reason == "duplicate_idempotent" else ""
             self.log(f"round {meta.round_id}: update accepted{note}")
         elif ack is not None and ack.reason not in FINAL_REJECTIONS:
             self.log(f"round {meta.round_id}: upload not decided ({ack.reason}); will resend")
-            return False
+            return False, False
         elif ack is not None:
             self.log(f"round {meta.round_id}: update rejected ({ack.reason})")
         self._clear_pending(meta.update_id)
-        self.state.rounds_done.append([meta.run_id, meta.round_id])
-        self._save_state()
-        return True
+        if mark_round_done:
+            self.state.rounds_done.append([meta.run_id, meta.round_id])
+            self._save_state()
+        return True, accepted
 
     def _report_control_messages(self, task: TaskAssignment) -> None:
         """Registration and conformance happen before the client knows a run, so they are

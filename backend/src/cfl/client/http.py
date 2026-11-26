@@ -31,8 +31,13 @@ from cfl.protocol.messages import (
     ManifestSummary,
     RegisterRequest,
     RegisterResponse,
+    RoundKeysResponse,
+    RoundKeySubmit,
     TaskAssignment,
     TransferReport,
+    UnmaskSharesRequest,
+    UnmaskSharesResponse,
+    UnmaskStatusResponse,
     UpdateAck,
     UpdateMetadata,
 )
@@ -86,9 +91,9 @@ class TransferStats:
 
 
 def _tls_failure(exc: BaseException) -> bool:
-    """Certificate problems do not go away by retrying: report them at once."""
+    """Certificate / mTLS handshake problems do not go away by retrying: report them at once."""
     while exc is not None:
-        if isinstance(exc, ssl.SSLCertVerificationError):
+        if isinstance(exc, ssl.SSLError):
             return True
         exc = exc.__cause__ or exc.__context__
     return False
@@ -111,6 +116,7 @@ class HttpTransport(Transport):
         token: str,
         *,
         verify: str | bool = True,
+        cert: tuple[str, str] | str | None = None,
         timeout: httpx.Timeout | None = None,
         retry: RetryPolicy | None = None,
         client: httpx.Client | None = None,
@@ -119,7 +125,8 @@ class HttpTransport(Transport):
         rng: random.Random | None = None,
     ):
         """`verify` is True (system CAs, e.g. Let's Encrypt) or the path of a CA bundle for a
-        server with its own CA. `client` replaces the HTTP client, e.g. in tests."""
+        server with its own CA. `cert` is an optional `(cert_path, key_path)` tuple for mTLS.
+        `client` replaces the HTTP client, e.g. in tests."""
         if not base_url.startswith("https://"):
             raise ValueError("the gateway must be reached over https://")
         self.retry = retry or RetryPolicy()
@@ -131,6 +138,7 @@ class HttpTransport(Transport):
             client = httpx.Client(
                 base_url=base_url.rstrip("/"),
                 verify=verify,
+                cert=cert,
                 timeout=timeout or httpx.Timeout(10.0, read=120.0, write=120.0),
                 headers=headers,
             )
@@ -302,3 +310,49 @@ class HttpTransport(Transport):
         if response.status_code != 200:
             raise _error(response)
         return (time.perf_counter() - start) * 1000
+
+    # -- SecAgg+ key exchange & unmasking -------------------------------------------------------
+    def submit_round_keys(self, submit: RoundKeySubmit) -> RoundKeysResponse:
+        response = self._request(
+            "secagg_keys",
+            "POST",
+            f"/rounds/{submit.round_id}/keys",
+            json=submit.model_dump(mode="json"),
+        )
+        if response.status_code != 200:
+            raise _error(response)
+        return RoundKeysResponse.model_validate(response.json())
+
+    def get_round_keys(self, run_id: str, round_id: int, client_id: str) -> RoundKeysResponse:
+        """`client_id` is implied by the token; kept for the Transport interface."""
+        response = self._request(
+            "secagg_keys",
+            "GET",
+            f"/rounds/{round_id}/keys",
+            params={"run_id": run_id},
+        )
+        if response.status_code != 200:
+            raise _error(response)
+        return RoundKeysResponse.model_validate(response.json())
+
+    def get_unmask_status(self, run_id: str, round_id: int, client_id: str) -> UnmaskStatusResponse:
+        response = self._request(
+            "secagg_unmask",
+            "GET",
+            f"/rounds/{round_id}/unmask",
+            params={"run_id": run_id},
+        )
+        if response.status_code != 200:
+            raise _error(response)
+        return UnmaskStatusResponse.model_validate(response.json())
+
+    def submit_unmask_shares(self, req: UnmaskSharesRequest) -> UnmaskSharesResponse:
+        response = self._request(
+            "secagg_unmask",
+            "POST",
+            f"/rounds/{req.round_id}/unmask",
+            json=req.model_dump(mode="json"),
+        )
+        if response.status_code != 200:
+            raise _error(response)
+        return UnmaskSharesResponse.model_validate(response.json())

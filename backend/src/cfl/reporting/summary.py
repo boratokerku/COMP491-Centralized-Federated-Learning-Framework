@@ -181,6 +181,27 @@ def build_summary(data: RunData) -> dict[str, Any]:
         if e.event_type in INCIDENT_EVENTS
     ]
 
+    priv_cfg = (run.config or {}).get("privacy") or {}
+    priv_enabled = bool(priv_cfg.get("enabled", False))
+    secagg_enabled = bool(priv_cfg.get("secagg_enabled", False)) and priv_enabled
+    round_sigmas = [
+        float(p["sigma_t"])
+        for e in data.events
+        if e.event_type == "ROUND_OPENED"
+        and isinstance((p := (e.payload or {}).get("privacy")), dict)
+        and p.get("sigma_t") is not None
+    ]
+    sigma_stats = stats(round_sigmas)
+    privacy_summary = {
+        "enabled": priv_enabled,
+        "secagg_enabled": secagg_enabled,
+        "clip_norm": priv_cfg.get("clip_norm") if priv_enabled else None,
+        "base_noise_std": priv_cfg.get("base_noise_std") if priv_enabled else None,
+        "min_recovery_ratio": priv_cfg.get("min_recovery_ratio") if secagg_enabled else None,
+        "mean_sigma_t": sigma_stats["mean"],
+        "sigma_t_stats": sigma_stats,
+    }
+
     duration = (
         (run.completed_at - run.started_at).total_seconds()
         if run.started_at and run.completed_at
@@ -213,6 +234,7 @@ def build_summary(data: RunData) -> dict[str, Any]:
         },
         "config": run.config,
         "config_sha256": run.config_sha256,
+        "privacy": privacy_summary,
         "rounds_summary": {
             "attempted": len(data.rounds),
             "completed": len(done),

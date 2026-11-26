@@ -319,6 +319,10 @@ Task polling (e.g. every 2–5 seconds while a client is idle).
 | `model_version` | Global model version to download and train on. |
 | `deadline` | UTC; updates received later are rejected as stale (decided with the server's clock). |
 | `config` | Round hyperparameters, fixed for the federation (`interfaces.md`, section 3). `proximal_mu > 0` means FedProx. |
+| `clip_norm` | Optional (`> 0`). When privacy is enabled, L2 norm bound $C$ applied to $\Delta w_i = w_i - w^t$. |
+| `sigma_t` | Optional (`>= 0`). Calibrated Local DP noise std $\sigma_t = \sigma_0 / \sqrt{N_t}$ added to the clipped delta. |
+| `trust_weight` | Optional (`(0, 1]`). Metadata-based trust weight $\alpha_i^t$ ($\sum \alpha_i^t = 1$); client scales $\tilde{w}_i = \alpha_i^t \Delta w_i'$. |
+| `secagg_threshold` | Optional (`>= 2`). When set, SecAgg+ is active with Shamir recovery threshold $k_t$ (see section 3.8). |
 
 - **`204 No Content`:** not selected, no collecting round, or the update for this round was already accepted.
 - **`401` / `403`:** token invalid, client disabled or not registered.
@@ -417,6 +421,77 @@ Downloads the final model artifact of a completed run.
 
 #### Client-Side Action
 Download `onnx` and `artifact` (and optionally `manifest`, `safetensors`), then call `cfl.core.artifact.verify_artifact(files, X-Final-Model-SHA256)`: it checks every checksum and reproduces the reference predictions with ONNX Runtime. Pre-processing (scaling, one-hot encoding or tokenization) is not part of the ONNX graph; apply it as described in `artifact.json` → `preprocessing`.
+
+---
+
+### 3.8 Privacy Extension & SecAgg+ Endpoints (`POST/GET /rounds/{round_id}/keys`, `GET/POST /rounds/{round_id}/unmask`)
+Used when `TaskAssignment` carries privacy parameters (`clip_norm`, `sigma_t`, `trust_weight`) and `secagg_threshold` ($k_t$). Both `cfl-client` and Independent Clients follow the same weight-tensor protocol (data-agnostic across tabular and text tasks).
+
+#### Client-Side Privacy Pipeline
+1. Train locally on global model $w^t$ to obtain $w_i$ (using FedProx when `proximal_mu > 0`).
+2. Compute and clip delta: $\Delta w_i = \text{Clip}(w_i - w^t, C)$ using global $L_2$ norm bound `clip_norm`.
+3. Add calibrated Gaussian DP noise: $\Delta w_i' = \Delta w_i + \eta_i$, $\eta_i \sim \mathcal{N}(0, \sigma_t^2 I)$.
+4. Scale by coordinator-assigned metadata trust weight: $\tilde{w}_i = \alpha_i^t \Delta w_i'$.
+5. **DP-only mode (`secagg_threshold == null`):** upload `float32` $\tilde{w}_i$ via `POST /update`.
+6. **SecAgg+ mode (`secagg_threshold != null`):** quantize $\tilde{w}_i$ to `int64` fixed-point ($\text{scale}=2^{24}, M=2^{48}$), run the key exchange and unmasking steps below, and upload the masked `int64` safetensors payload $\hat{w}_i$ via `POST /update`.
+
+#### `POST /rounds/{round_id}/keys` & `GET /rounds/{round_id}/keys?run_id=<uuid>`
+- **Access:** clients `SELECTED` for `round_id` while the round is `COLLECTING` (`403 not_selected`, `404 unknown_round`, `409 secagg_state_error`, `422 round_id_mismatch`).
+- **Request (`RoundKeySubmit`):**
+```json
+{
+  "run_id": "d3b07384-d113-4966-bfbe-08f321cd4943",
+  "round_id": 1,
+  "client_id": "bank-a",
+  "public_key_hex": "<64 hex chars (32-byte raw X25519 public key)>",
+  "encrypted_shares": {
+    "bank-b": "<hex(12-byte nonce || AES-256-GCM ciphertext of self_mask & mask_key Shamir shares)>"
+  }
+}
+```
+- **Response (`200 OK`, `RoundKeysResponse`):**
+```json
+{
+  "run_id": "d3b07384-d113-4966-bfbe-08f321cd4943",
+  "round_id": 1,
+  "ready": true,
+  "secagg_threshold": 3,
+  "peers": [
+    {"client_id": "bank-a", "public_key_hex": "<64 hex>"},
+    {"client_id": "bank-b", "public_key_hex": "<64 hex>"}
+  ],
+  "incoming_shares": {
+    "bank-b": "<hex ciphertext addressed to the requesting client>"
+  }
+}
+```
+- **Flow:** clients first post their ephemeral X25519 `public_key_hex`, poll `GET` until `ready: true`, split their 32-byte `self_mask` seed $b_i$ and X25519 private key $s_i$ with Shamir $(N, k_t)$ over $p = 2^{256} - 189$, encrypt each peer's pair with AES-256-GCM using `HKDF-SHA256(ECDH(sk_i, pk_j), info="cfl-secagg-share-v1|" + run_id + "|" + round_id)` (AAD = `run_id + "|" + round_id`), re-post `encrypted_shares`, decrypt `incoming_shares`, apply double masking ($\hat{w}_i = x_i + \text{PRG}(b_i) + \sum_{j>i} \text{PRG}(s_{ij}) - \sum_{j<i} \text{PRG}(s_{ij}) \pmod M$), and upload via `POST /update`.
+
+#### `GET /rounds/{round_id}/unmask?run_id=<uuid>` & `POST /rounds/{round_id}/unmask`
+- **GET Response (`200 OK`, `UnmaskStatusResponse`):**
+```json
+{
+  "run_id": "d3b07384-d113-4966-bfbe-08f321cd4943",
+  "round_id": 1,
+  "ready": true,
+  "surviving": ["bank-a", "bank-b", "bank-c"],
+  "dropped": ["bank-d"],
+  "deadline": "2026-11-04T15:23:30Z"
+}
+```
+- **POST Request (`UnmaskSharesRequest`):** surviving clients submit `self_mask` shares for every `surviving` peer and `mask_key` shares for every `dropped` peer (never both kinds for the same peer — enforced at both client and server):
+```json
+{
+  "run_id": "d3b07384-d113-4966-bfbe-08f321cd4943",
+  "round_id": 1,
+  "client_id": "bank-a",
+  "shares": [
+    {"target_client_id": "bank-b", "kind": "self_mask", "share": {"x": 1, "y_hex": "3f9a..."}},
+    {"target_client_id": "bank-d", "kind": "mask_key",  "share": {"x": 1, "y_hex": "7c12..."}}
+  ]
+}
+```
+- **POST Response (`200 OK`, `UnmaskSharesResponse`):** `{"accepted": true, "round_id": 1, "reason": null}`. Ephemeral keys, shares, and masked updates are deleted by the server immediately after aggregation.
 
 A client without ONNX Runtime can verify the artifact from the other files: compare the SHA-256 of `model.onnx` with `X-Final-Model-SHA256`, every file with `artifact.json` → `files`, then run the forward pass of section 7.2 with the weights of `model.safetensors` on `artifact.json` → `reference_predictions[*].model_input` and compare the logits with `reference_predictions[*].logits` (`verification.atol`).
 
