@@ -6,14 +6,30 @@ export const nav = [
   { href: "/demo", label: "How it works", hover: "var(--warning)" },
   { href: "/docs", label: "Documentation", hover: "var(--mint)" },
   { href: "/results", label: "Results", hover: "var(--accent)" },
-  { href: "/team", label: "Team FedUp and Advisors", hover: "var(--lilac)" },
+  { href: "/team", label: "Team", hover: "var(--lilac)" },
 ];
 
 export const team = [
-  { name: "Bora Toker", role: "Aggregator, coordinator, gateway, shared client runtime, deployment" },
-  { name: "Enes Tunç", role: "Bank client (tabular), API specification, independent-implementation client" },
-  { name: "Hilal Aygül", role: "Website, Grafana dashboards, end-of-run report" },
-  { name: "Merve Köybaşı", role: "Telecom client (text), conformance and database schema" },
+  {
+    name: "Bora Toker",
+    email: "btoker23@ku.edu.tr",
+    role: "Aggregator, coordinator, gateway, shared client runtime, deployment",
+  },
+  {
+    name: "Enes Tunç",
+    email: "etunc22@ku.edu.tr",
+    role: "Bank client (tabular), API specification, independent-implementation client",
+  },
+  {
+    name: "Hilal Aygül",
+    email: "haygul22@ku.edu.tr",
+    role: "Website, Grafana dashboards, end-of-run report",
+  },
+  {
+    name: "Merve Köybaşı",
+    email: "mkoybasi21@ku.edu.tr",
+    role: "Telecom client (text), conformance and database schema",
+  },
 ];
 
 export const advisors = ["Prof. Mehmet Emre Gürsoy", "Prof. Barış Akgün"];
