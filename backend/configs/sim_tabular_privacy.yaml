@@ -20,7 +20,7 @@ rounds:
   client_fraction: 1.0
   min_participants: 3
   round_deadline_s: 120
-  max_num_samples: 10000
+  max_num_samples: 25000
 
 client:
   local_epochs: 1
