@@ -94,15 +94,15 @@ def round_context(run_id: str, round_id: int) -> bytes:
 
 def _derive_pair_seed(sk: X25519PrivateKey, peer_pk: X25519PublicKey, ctx: bytes) -> bytes:
     """ECDH shared secret -> 32-byte PRG seed (HKDF-SHA256), identical on both sides."""
-    return HKDF(
-        algorithm=SHA256(), length=32, salt=None, info=b"cfl-secagg-pair-v1|" + ctx
-    ).derive(sk.exchange(peer_pk))
+    return HKDF(algorithm=SHA256(), length=32, salt=None, info=b"cfl-secagg-pair-v1|" + ctx).derive(
+        sk.exchange(peer_pk)
+    )
 
 
 def _derive_self_seed(seed: bytes, ctx: bytes) -> bytes:
-    return HKDF(
-        algorithm=SHA256(), length=32, salt=None, info=b"cfl-secagg-self-v1|" + ctx
-    ).derive(seed)
+    return HKDF(algorithm=SHA256(), length=32, salt=None, info=b"cfl-secagg-self-v1|" + ctx).derive(
+        seed
+    )
 
 
 def expand_mask(seed: bytes, num_elements: int, modulus: int = DEFAULT_MODULUS) -> torch.Tensor:
@@ -200,7 +200,10 @@ def share_to_reveal(peer_id: str, surviving: set[str], dropped: set[str]) -> Sha
 # ---------------------------------------------------------------------------
 
 
-def sum_masked(masked_updates: list[QuantizedDict], modulus: int = DEFAULT_MODULUS) -> QuantizedDict:
+def sum_masked(
+    masked_updates: list[QuantizedDict],
+    modulus: int = DEFAULT_MODULUS,
+) -> QuantizedDict:
     """Σ ŷ_i (mod M). The server only ever handles this sum, never an unmasked x_i."""
     if not masked_updates:
         raise ValueError("cannot sum an empty list of masked updates")

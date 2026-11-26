@@ -5,11 +5,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from cfl.core.privacy import DEFAULT_BASE_SIGMA, DEFAULT_CLIP_NORM
 
 
 class _Strict(BaseModel):
@@ -68,17 +71,47 @@ class ClientSection(_Strict):
         return self
 
 
+class PrivacySection(_Strict):
+    """Optional privacy extension settings: gradient clipping, Local DP and SecAgg+."""
+
+    enabled: bool = False
+    clip_norm: float = Field(default=DEFAULT_CLIP_NORM, gt=0)  # C
+    base_noise_std: float = Field(default=DEFAULT_BASE_SIGMA, ge=0)  # sigma_0
+    secagg_enabled: bool = False
+    min_recovery_ratio: float = Field(default=0.67, gt=0, le=1)  # k_t / N_t
+
+    @model_validator(mode="after")
+    def _secagg_requires_privacy(self) -> PrivacySection:
+        if self.secagg_enabled and not self.enabled:
+            raise ValueError("secagg_enabled requires privacy.enabled to be true")
+        return self
+
+    def recovery_threshold(self, num_participants: int) -> int:
+        """Compute Shamir threshold k_t in [2, N_t] from min_recovery_ratio."""
+        if num_participants < 2:
+            raise ValueError(f"SecAgg requires at least 2 participants, got {num_participants}")
+        k = math.ceil(self.min_recovery_ratio * num_participants)
+        return max(2, min(num_participants, k))
+
+
 class RunConfig(_Strict):
     run: RunSection
     task: TaskSection
     strategy: StrategySection
     rounds: RoundsSection
     client: ClientSection
+    privacy: PrivacySection = Field(default_factory=PrivacySection)
 
     @model_validator(mode="after")
     def _participants_fit(self) -> RunConfig:
         if self.rounds.min_participants > self.task.num_clients:
             raise ValueError("min_participants cannot exceed task.num_clients")
+        if (
+            self.privacy.enabled
+            and self.privacy.secagg_enabled
+            and self.rounds.min_participants < 2
+        ):
+            raise ValueError("secagg_enabled requires rounds.min_participants >= 2")
         return self
 
     def fingerprint(self) -> str:
