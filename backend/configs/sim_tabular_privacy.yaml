@@ -1,0 +1,36 @@
+# Run config for local simulation on UCI Bank Marketing with the Privacy Extension enabled
+# (FedProx + L2 Clipping + Client-Count-Aware Local DP + Pairwise SecAgg+ + Dynamic Trust α_i).
+run:
+  name: sim-tabular-fedprox-privacy
+  seed: 42
+  mode: simulation
+
+task:
+  name: tabular
+  data_dir: data/tabular
+  num_clients: 4
+  partition: iid
+
+strategy:
+  name: fedprox
+  mu: 0.01
+
+rounds:
+  num_rounds: 20
+  client_fraction: 1.0
+  min_participants: 3
+  round_deadline_s: 120
+  max_num_samples: 25000
+
+client:
+  local_epochs: 1
+  batch_size: 64
+  learning_rate: 0.003
+  class_weights: [1.0, 5.0]
+
+privacy:
+  enabled: true
+  clip_norm: 2.0
+  base_noise_std: 0.005
+  secagg_enabled: true
+  min_recovery_ratio: 0.67

@@ -14,7 +14,12 @@ from cfl.protocol import PROTOCOL_VERSION
 from cfl.protocol.messages import (
     RegisterRequest,
     RegisterResponse,
+    RoundKeysResponse,
+    RoundKeySubmit,
     TaskAssignment,
+    UnmaskSharesRequest,
+    UnmaskSharesResponse,
+    UnmaskStatusResponse,
     UpdateAck,
     UpdateMetadata,
 )
@@ -56,3 +61,15 @@ class InMemoryTransport(Transport):
         if files is None:
             return None
         return files, self.state.get_run(run_id).final_model_sha256
+
+    def submit_round_keys(self, submit: RoundKeySubmit) -> RoundKeysResponse:
+        return self.coordinator.submit_round_keys(submit)
+
+    def get_round_keys(self, run_id: str, round_id: int, client_id: str) -> RoundKeysResponse:
+        return self.coordinator.get_round_keys(run_id, round_id, client_id)
+
+    def get_unmask_status(self, run_id: str, round_id: int, client_id: str) -> UnmaskStatusResponse:
+        return self.coordinator.get_unmask_status(run_id, round_id, client_id)
+
+    def submit_unmask_shares(self, req: UnmaskSharesRequest) -> UnmaskSharesResponse:
+        return self.coordinator.submit_unmask_shares(req)

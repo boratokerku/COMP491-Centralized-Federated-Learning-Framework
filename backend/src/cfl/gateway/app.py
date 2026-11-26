@@ -33,7 +33,7 @@ from cfl.conformance.checker import check_report
 from cfl.coordinator.aggregator import global_model_key
 from cfl.coordinator.coordinator import Coordinator, manifest_key
 from cfl.coordinator.intake import IntakeReason, UpdateIntake
-from cfl.coordinator.state_store import EventRecord, MetricRecord, RunRecord, RunStatus
+from cfl.coordinator.state_store import EventRecord, MetricRecord, RunRecord, RunStatus, StateStore
 from cfl.core.artifact import ARTIFACT, MANIFEST, MODEL_ONNX, MODEL_SAFETENSORS
 from cfl.core.serialization import sha256
 from cfl.core.store import FileModelStore, ModelStore
@@ -48,13 +48,18 @@ from cfl.protocol.messages import (
     ManifestSummary,
     RegisterRequest,
     RegisterResponse,
+    RoundKeysResponse,
+    RoundKeySubmit,
     TaskAssignment,
     TransferReport,
+    UnmaskSharesRequest,
+    UnmaskSharesResponse,
+    UnmaskStatusResponse,
     UpdateAck,
     UpdateMetadata,
 )
 
-CONTROL_MESSAGES = frozenset({"register", "conformance", "task"})
+CONTROL_MESSAGES = frozenset({"register", "conformance", "task", "secagg_keys", "secagg_unmask"})
 
 # HTTP status for each intake decision (planning/api-spec.md, section 2.4).
 INTAKE_STATUS = {
@@ -108,7 +113,11 @@ RegisteredClient = Annotated[ClientRecord, Depends(registered)]
 
 
 def create_app(
-    engine: Engine | None = None, models: ModelStore | None = None, clock=_now
+    engine: Engine | None = None,
+    models: ModelStore | None = None,
+    clock=_now,
+    state_store: StateStore | None = None,
+    client_registry: ClientRegistry | None = None,
 ) -> FastAPI:
     app = FastAPI(title="CFL Gateway", version=__version__)
 
@@ -124,11 +133,11 @@ def create_app(
 
     @cache
     def registry() -> ClientRegistry:
-        return ClientRegistry(db(), clock)
+        return client_registry if client_registry is not None else ClientRegistry(db(), clock)
 
     @cache
-    def state() -> PostgresStateStore:
-        return PostgresStateStore(db())
+    def state() -> StateStore:
+        return state_store if state_store is not None else PostgresStateStore(db())
 
     @cache
     def coordinator() -> Coordinator:  # read-only use: the gateway never calls step()
@@ -503,6 +512,49 @@ def create_app(
         )
         status = INTAKE_STATUS.get(IntakeReason(ack.reason) if ack.reason else None, 500)
         return JSONResponse(status_code=status, content=body.model_dump(mode="json"))
+
+    # -- 3.9 SecAgg+ key exchange & unmasking -------------------------------------------------
+    def _secagg_call(fn):
+        try:
+            return fn()
+        except KeyError as exc:
+            raise GatewayError(404, "unknown_round", str(exc)) from None
+        except PermissionError as exc:
+            raise GatewayError(403, "not_selected", str(exc)) from None
+        except ValueError as exc:
+            raise GatewayError(409, "secagg_state_error", str(exc)) from None
+
+    @app.post("/rounds/{round_id}/keys", response_model=RoundKeysResponse)
+    def submit_round_keys(
+        round_id: int, body: RoundKeySubmit, client: RegisteredClient
+    ) -> RoundKeysResponse:
+        same_client(client, body.client_id)
+        if body.round_id != round_id:
+            raise GatewayError(422, "round_id_mismatch", "path round_id does not match body")
+        return _secagg_call(lambda: coordinator().submit_round_keys(body))
+
+    @app.get("/rounds/{round_id}/keys", response_model=RoundKeysResponse)
+    def get_round_keys(round_id: int, run_id: str, client: RegisteredClient) -> RoundKeysResponse:
+        return _secagg_call(
+            lambda: coordinator().get_round_keys(run_id, round_id, client.client_id)
+        )
+
+    @app.get("/rounds/{round_id}/unmask", response_model=UnmaskStatusResponse)
+    def get_unmask_status(
+        round_id: int, run_id: str, client: RegisteredClient
+    ) -> UnmaskStatusResponse:
+        return _secagg_call(
+            lambda: coordinator().get_unmask_status(run_id, round_id, client.client_id)
+        )
+
+    @app.post("/rounds/{round_id}/unmask", response_model=UnmaskSharesResponse)
+    def submit_unmask_shares(
+        round_id: int, body: UnmaskSharesRequest, client: RegisteredClient
+    ) -> UnmaskSharesResponse:
+        same_client(client, body.client_id)
+        if body.round_id != round_id:
+            raise GatewayError(422, "round_id_mismatch", "path round_id does not match body")
+        return _secagg_call(lambda: coordinator().submit_unmask_shares(body))
 
     return app
 

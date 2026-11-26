@@ -20,12 +20,15 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 import torch
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
 from cfl.coordinator.state import RoundState
 from cfl.core.contract import ContractViolation, ModelContract, StateDict
+from cfl.core.privacy import DEFAULT_MODULUS, DEFAULT_SCALE, dequantize_state_dict
+from cfl.core.secagg import round_context, sum_masked, unmask_aggregate
 from cfl.core.serialization import bytes_to_state_dict, sha256, state_dict_to_bytes
 from cfl.core.store import ModelStore
-from cfl.core.strategy import ClientUpdate, Strategy
+from cfl.core.strategy import ClientUpdate, Strategy, delta_sum
 
 Evaluator = Callable[[StateDict], dict[str, float]]
 
@@ -71,6 +74,16 @@ class RoundInput:
     updates: list[UpdateRecord]
     min_participants: int
     max_num_samples: int | None = None  # per-client cap on the reported sample count
+    # Privacy extension (SecAgg+ and/or DP delta aggregation)
+    privacy_delta: bool = False
+    secagg_enabled: bool = False
+    secagg_self_seeds: dict[str, bytes] | None = None
+    secagg_dropped_keys: dict[str, X25519PrivateKey] | None = None
+    secagg_surviving_public_keys: dict[str, bytes] | None = None
+    secagg_weight_scale: float = 1.0  # re-normalizes surviving α_i sum back to 1.0 after dropouts
+    secagg_modulus: int = DEFAULT_MODULUS
+    secagg_scale: float = DEFAULT_SCALE
+    cleanup_updates: bool = False
 
 
 @dataclass
@@ -116,83 +129,127 @@ class Aggregator:
         metrics: dict[str, float] = {"updates_received": float(len(r.updates))}
 
         try:
-            global_weights = self._load_verified(r.input_key, r.input_sha256)
-            self.contract.check(global_weights)
-        except Exception as exc:  # missing, corrupt or non-conforming input model
-            return AggregationResult(
-                RoundState.FAILED,
-                FailureReason.INPUT_MODEL_INVALID,
-                f"{type(exc).__name__}: {exc}",
-                metrics=metrics,
-            )
-
-        start = time.perf_counter()
-        accepted, rejected, bytes_read = self._load_updates(r)
-        metrics["load_s"] = time.perf_counter() - start
-        metrics["bytes_read"] = float(bytes_read)
-        metrics["updates_used"] = float(len(accepted))
-        metrics["updates_rejected"] = float(len(rejected))
-        used = [u.client_id for u in accepted]
-
-        if len(accepted) < r.min_participants:
-            return AggregationResult(
-                RoundState.FAILED,
-                FailureReason.QUORUM_NOT_MET,
-                f"{len(accepted)} valid updates, need {r.min_participants}",
-                used=used,
-                rejected=rejected,
-                metrics=metrics,
-            )
-
-        metrics["total_samples"] = float(sum(u.num_samples for u in accepted))
-        start = time.perf_counter()
-        try:
-            new_weights = self.strategy.aggregate(global_weights, accepted)
-            self.contract.check(new_weights)
-        except ValueError as exc:
-            return AggregationResult(
-                RoundState.FAILED,
-                FailureReason.AGGREGATION_ERROR,
-                str(exc),
-                used=used,
-                rejected=rejected,
-                metrics=metrics,
-            )
-        metrics["aggregation_s"] = time.perf_counter() - start
-
-        if self.evaluator is not None:
-            start = time.perf_counter()
             try:
-                evaluation = self.evaluator(new_weights)
-            except Exception as exc:  # any failure here must fail the round, not crash it
+                global_weights = self._load_verified(r.input_key, r.input_sha256)
+                self.contract.check(global_weights)
+            except Exception as exc:  # missing, corrupt or non-conforming input model
                 return AggregationResult(
                     RoundState.FAILED,
-                    FailureReason.EVALUATION_ERROR,
+                    FailureReason.INPUT_MODEL_INVALID,
                     f"{type(exc).__name__}: {exc}",
+                    metrics=metrics,
+                )
+
+            start = time.perf_counter()
+            accepted, rejected, bytes_read = self._load_updates(r, global_weights)
+            metrics["load_s"] = time.perf_counter() - start
+            metrics["bytes_read"] = float(bytes_read)
+            metrics["updates_used"] = float(len(accepted))
+            metrics["updates_rejected"] = float(len(rejected))
+            used = [u.client_id for u in accepted]
+
+            if len(accepted) < r.min_participants:
+                return AggregationResult(
+                    RoundState.FAILED,
+                    FailureReason.QUORUM_NOT_MET,
+                    f"{len(accepted)} valid updates, need {r.min_participants}",
                     used=used,
                     rejected=rejected,
                     metrics=metrics,
                 )
-            metrics["evaluation_s"] = time.perf_counter() - start
-            metrics.update({f"global_{k}": v for k, v in evaluation.items()})
 
-        start = time.perf_counter()
-        data = state_dict_to_bytes(new_weights)
-        output_version = r.input_version + 1
-        output_key = global_model_key(r.run_id, output_version)
-        self.store.put(output_key, data)
-        metrics["write_s"] = time.perf_counter() - start
-        metrics["model_bytes"] = float(len(data))
+            if r.secagg_enabled and rejected:
+                return AggregationResult(
+                    RoundState.FAILED,
+                    FailureReason.AGGREGATION_ERROR,
+                    "cannot unmask SecAgg aggregate: one or more masked updates failed validation",
+                    used=used,
+                    rejected=rejected,
+                    metrics=metrics,
+                )
 
-        return AggregationResult(
-            RoundState.DONE,
-            output_version=output_version,
-            output_key=output_key,
-            output_sha256=sha256(data),
-            used=used,
-            rejected=rejected,
-            metrics=metrics,
-        )
+            metrics["total_samples"] = float(sum(u.num_samples for u in accepted))
+            start = time.perf_counter()
+            try:
+                new_weights = self._combine(r, global_weights, accepted)
+                self.contract.check(new_weights)
+                if r.secagg_enabled and not self._sane(new_weights):
+                    raise ValueError("unmasked global model failed sanity check")
+            except ValueError as exc:
+                return AggregationResult(
+                    RoundState.FAILED,
+                    FailureReason.AGGREGATION_ERROR,
+                    str(exc),
+                    used=used,
+                    rejected=rejected,
+                    metrics=metrics,
+                )
+            metrics["aggregation_s"] = time.perf_counter() - start
+
+            if self.evaluator is not None:
+                start = time.perf_counter()
+                try:
+                    evaluation = self.evaluator(new_weights)
+                except Exception as exc:  # any failure here must fail the round, not crash it
+                    return AggregationResult(
+                        RoundState.FAILED,
+                        FailureReason.EVALUATION_ERROR,
+                        f"{type(exc).__name__}: {exc}",
+                        used=used,
+                        rejected=rejected,
+                        metrics=metrics,
+                    )
+                metrics["evaluation_s"] = time.perf_counter() - start
+                metrics.update({f"global_{k}": v for k, v in evaluation.items()})
+
+            start = time.perf_counter()
+            data = state_dict_to_bytes(new_weights)
+            output_version = r.input_version + 1
+            output_key = global_model_key(r.run_id, output_version)
+            self.store.put(output_key, data)
+            metrics["write_s"] = time.perf_counter() - start
+            metrics["model_bytes"] = float(len(data))
+
+            return AggregationResult(
+                RoundState.DONE,
+                output_version=output_version,
+                output_key=output_key,
+                output_sha256=sha256(data),
+                used=used,
+                rejected=rejected,
+                metrics=metrics,
+            )
+        finally:
+            if r.cleanup_updates:
+                for u in r.updates:
+                    self.store.delete(u.key)
+
+    def _combine(
+        self, r: RoundInput, global_weights: StateDict, accepted: list[ClientUpdate]
+    ) -> StateDict:
+        if r.secagg_enabled:
+            ctx = round_context(r.run_id, r.round_id)
+            agg_masked = sum_masked([u.weights for u in accepted], modulus=r.secagg_modulus)
+            unmasked = unmask_aggregate(
+                agg_masked,
+                ctx,
+                surviving_self_seeds=r.secagg_self_seeds or {},
+                dropped_private_keys=r.secagg_dropped_keys,
+                surviving_public_keys=r.secagg_surviving_public_keys,
+                modulus=r.secagg_modulus,
+            )
+            delta_agg = dequantize_state_dict(
+                unmasked, scale=r.secagg_scale, modulus=r.secagg_modulus
+            )
+            if r.secagg_weight_scale != 1.0:
+                delta_agg = {k: v * r.secagg_weight_scale for k, v in delta_agg.items()}
+            return delta_sum(global_weights, [delta_agg])
+        if r.privacy_delta:
+            deltas = [u.weights for u in accepted]
+            if r.secagg_weight_scale != 1.0:
+                deltas = [{k: v * r.secagg_weight_scale for k, v in d.items()} for d in deltas]
+            return delta_sum(global_weights, deltas)
+        return self.strategy.aggregate(global_weights, accepted)
 
     def _load_verified(self, key: str, expected_sha256: str) -> StateDict:
         data = self.store.get(key)
@@ -201,7 +258,7 @@ class Aggregator:
         return bytes_to_state_dict(data)
 
     def _load_updates(
-        self, r: RoundInput
+        self, r: RoundInput, global_weights: StateDict
     ) -> tuple[list[ClientUpdate], dict[str, Rejection], int]:
         accepted: list[ClientUpdate] = []
         rejected: dict[str, Rejection] = {}
@@ -236,13 +293,18 @@ class Aggregator:
                 rejected[u.update_id] = Rejection.CORRUPT_FILE
                 continue
             try:
-                self.contract.check(weights)
+                if r.secagg_enabled:
+                    self.contract.check_quantized(weights, r.secagg_modulus)
+                else:
+                    self.contract.check(weights)
             except ContractViolation as exc:
                 rejected[u.update_id] = Rejection(exc.code)
                 continue
-            if not self._sane(weights):
-                rejected[u.update_id] = Rejection.SANITY_CHECK_FAILED
-                continue
+            if not r.secagg_enabled:
+                check_weights = delta_sum(global_weights, [weights]) if r.privacy_delta else weights
+                if not self._sane(check_weights):
+                    rejected[u.update_id] = Rejection.SANITY_CHECK_FAILED
+                    continue
             accepted.append(ClientUpdate(u.client_id, weights, u.num_samples))
         return accepted, rejected, bytes_read
 

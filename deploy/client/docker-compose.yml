@@ -19,6 +19,8 @@ services:
       CFL_TASK: ${CFL_TASK:?set CFL_TASK to tabular or text}
       CFL_TASK_SPEC: ${CFL_TASK_SPEC:-}
       CFL_CA_BUNDLE: ${CFL_CA_BUNDLE_IN_CONTAINER:-}
+      CFL_CLIENT_CERT: ${CFL_CLIENT_CERT_IN_CONTAINER:-}
+      CFL_CLIENT_KEY: ${CFL_CLIENT_KEY_IN_CONTAINER:-}
     volumes:
       - ${CFL_PARTITION_DIR:?set CFL_PARTITION_DIR}:/data:ro
       - state:/state

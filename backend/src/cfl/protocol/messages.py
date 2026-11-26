@@ -9,8 +9,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from cfl.core.secagg import ShamirShare
 from cfl.protocol import PROTOCOL_VERSION
 
 # -- 1. Registration ----------------------------------------------------------------------------
@@ -122,6 +123,137 @@ class TaskAssignment(BaseModel):
     model_version: int
     deadline: datetime
     config: dict[str, Any] = Field(default_factory=dict)
+    # Per-round privacy / SecAgg+ parameters (None when privacy is disabled).
+    clip_norm: float | None = Field(default=None, gt=0)
+    sigma_t: float | None = Field(default=None, ge=0)
+    trust_weight: float | None = Field(default=None, gt=0, le=1)
+    secagg_threshold: int | None = Field(default=None, ge=2)
+
+
+def _validate_x25519_hex(value: str) -> str:
+    try:
+        raw = bytes.fromhex(value)
+    except ValueError as exc:
+        raise ValueError("public_key_hex must be valid hexadecimal") from exc
+    if len(raw) != 32:
+        raise ValueError(f"X25519 public key must be 32 bytes (64 hex chars), got {len(raw)} bytes")
+    return raw.hex()
+
+
+class ShamirSharePayload(BaseModel):
+    """JSON-safe encoding of a Shamir share (256-bit y as hex to avoid float precision loss)."""
+
+    x: int = Field(ge=1)
+    y_hex: str
+
+    @field_validator("y_hex")
+    @classmethod
+    def _valid_hex(cls, value: str) -> str:
+        if not value:
+            raise ValueError("y_hex must not be empty")
+        try:
+            n = int(value, 16)
+        except ValueError as exc:
+            raise ValueError("y_hex must be valid hexadecimal") from exc
+        if n < 0:
+            raise ValueError("y_hex must be non-negative")
+        return value.lower()
+
+    @classmethod
+    def from_share(cls, share: ShamirShare) -> ShamirSharePayload:
+        return cls(x=share.x, y_hex=format(share.y, "x"))
+
+    def to_share(self) -> ShamirShare:
+        return ShamirShare(x=self.x, y=int(self.y_hex, 16))
+
+
+class PeerKeyEntry(BaseModel):
+    client_id: str = Field(min_length=1)
+    public_key_hex: str
+
+    @field_validator("public_key_hex")
+    @classmethod
+    def _valid_pubkey(cls, value: str) -> str:
+        return _validate_x25519_hex(value)
+
+    def public_key_bytes(self) -> bytes:
+        return bytes.fromhex(self.public_key_hex)
+
+
+class RoundKeySubmit(BaseModel):
+    """Client submits its ephemeral X25519 public key (and optional peer-encrypted shares)."""
+
+    run_id: str
+    round_id: int = Field(ge=1)
+    client_id: str = Field(min_length=1)
+    public_key_hex: str
+    # Optional map: recipient_client_id -> opaque hex ciphertext of Shamir shares for that peer.
+    encrypted_shares: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("public_key_hex")
+    @classmethod
+    def _valid_pubkey(cls, value: str) -> str:
+        return _validate_x25519_hex(value)
+
+
+class RoundKeysResponse(BaseModel):
+    """Gateway returns peer public keys for a SecAgg+ round once key exchange is ready."""
+
+    run_id: str
+    round_id: int = Field(ge=1)
+    ready: bool
+    secagg_threshold: int = Field(ge=2)
+    peers: list[PeerKeyEntry] = Field(default_factory=list)
+    # Optional map: sender_client_id -> opaque hex ciphertext addressed to the requesting client.
+    incoming_shares: dict[str, str] = Field(default_factory=dict)
+
+
+class RevealedShare(BaseModel):
+    """One Shamir share revealed during unmasking: self_mask (survivor) or mask_key (dropout)."""
+
+    target_client_id: str = Field(min_length=1)
+    kind: Literal["self_mask", "mask_key"]
+    share: ShamirSharePayload
+
+
+class UnmaskSharesRequest(BaseModel):
+    """Surviving client submits Shamir shares to unmask the round aggregate."""
+
+    run_id: str
+    round_id: int = Field(ge=1)
+    client_id: str = Field(min_length=1)
+    shares: list[RevealedShare] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _never_reveal_both_kinds_for_same_peer(self) -> UnmaskSharesRequest:
+        seen_kind: dict[str, str] = {}
+        for item in self.shares:
+            prev = seen_kind.get(item.target_client_id)
+            if prev is not None:
+                if prev != item.kind:
+                    raise ValueError(
+                        f"cannot reveal both self_mask and mask_key for {item.target_client_id}"
+                    )
+                raise ValueError(f"duplicate {item.kind} share for {item.target_client_id}")
+            seen_kind[item.target_client_id] = item.kind
+        return self
+
+
+class UnmaskSharesResponse(BaseModel):
+    accepted: bool
+    round_id: int = Field(ge=1)
+    reason: str | None = None
+
+
+class UnmaskStatusResponse(BaseModel):
+    """Tells surviving clients whether unmasking has started and which peers survived/dropped."""
+
+    run_id: str
+    round_id: int = Field(ge=1)
+    ready: bool
+    surviving: list[str] = Field(default_factory=list)
+    dropped: list[str] = Field(default_factory=list)
+    deadline: datetime | None = None
 
 
 class UpdateMetadata(BaseModel):
@@ -150,7 +282,14 @@ class TransferReport(BaseModel):  # addition: POST /transfer
     run_id: str
     round_id: int | None = None
     message_type: Literal[
-        "register", "conformance", "task", "model_download", "update_upload", "final_model_download"
+        "register",
+        "conformance",
+        "task",
+        "model_download",
+        "update_upload",
+        "final_model_download",
+        "secagg_keys",
+        "secagg_unmask",
     ]
     duration_ms: float = Field(ge=0)
     message_bytes: int | None = Field(default=None, ge=0)  # request + response body

@@ -1,0 +1,2 @@
+# Place mTLS client CA certificate (ca.crt) here when CFL_CADDYFILE=./Caddyfile.mtls is enabled.
+# Private keys (*.key) are gitignored; generate certs with deploy/scripts/mtls_certs.sh.
